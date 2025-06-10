@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" style="display: block; height: 0; width: 0;">
+  <defs>
+    <filter id="fireEffect" x="-20%" y="-20%" width="140%" height="180%" filterUnits="objectBoundingBox" primitiveUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <!-- Generate noise -->
+      <feTurbulence type="turbulence" baseFrequency="0.02 0.05" numOctaves="2" seed="0" stitchTiles="stitch" result="turbulence">
+        <!-- Animate the noise pattern -->
+        <animate attributeName="seed" from="0" to="100" dur="2s" repeatCount="indefinite" />
+         <animate attributeName="baseFrequency" values="0.02 0.05; 0.03 0.06; 0.02 0.05" dur="5s" repeatCount="indefinite" />
+      </feTurbulence>
+
+      <!-- Use noise to displace the text -->
+      <feDisplacementMap in="SourceGraphic" in2="turbulence" scale="20" xChannelSelector="R" yChannelSelector="G" result="displacement">
+         <!-- Animate the displacement scale slightly more -->
+          <animate attributeName="scale" values="20; 25; 20" dur="6s" repeatCount="indefinite" />
+      </feDisplacementMap>
+
+       <!-- Optional: Add some blur to smooth the distortion -->
+       <feGaussianBlur in="displacement" stdDeviation="1.8" result="blur"/>
+
+      <!-- Optional: Colorize - might look better using text-shadow -->
+      <!-- <feColorMatrix type="matrix" values="0 0 0 0 0
+                                           0 0 0 0 0
+                                           0 0 0 0 0
+                                           0 0 0 5 -1"
+                      in="blur" result="coloredTurbulence"/> -->
+
+      <!-- Merge original text with effect -->
+      <!-- Use feComposite to put original text back slightly offset? -->
+      <!-- Or rely on CSS text-shadow for base color/glow -->
+
+    </filter>
+  </defs>
+</svg> 

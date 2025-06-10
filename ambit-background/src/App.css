@@ -1,0 +1,454 @@
+body, html {
+  overflow: hidden; /* Prevent scrollbars */
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  /* background-color: #000; */ /* Remove this - Three.js sets its own background */
+}
+
+#root {
+  /* Remove default padding/margin if they exist and interfere */
+  /* max-width: 1280px; */ /* Remove max-width if it conflicts with full screen */
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  /* text-align: center; */ /* Let App container handle text alignment */
+}
+
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms;
+}
+.logo:hover {
+  filter: drop-shadow(0 0 2em #646cffaa);
+}
+.logo.react:hover {
+  filter: drop-shadow(0 0 2em #61dafbaa);
+}
+
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a:nth-of-type(2) .logo {
+    animation: logo-spin infinite 20s linear;
+  }
+}
+
+.card {
+  padding: 2em;
+}
+
+.read-the-docs {
+  color: #888;
+}
+
+.App {
+  position: relative; /* Needed for absolute positioning of name tag border */
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  /* text-align: center; Remove from here, let content handle it */
+}
+
+.content {
+  position: relative; /* Change from absolute to relative */
+  /* Remove absolute positioning properties */
+  /* top: 40%; */
+  /* left: 5%; */
+  /* right: 5%; */
+  /* bottom: 35%; */
+  /* width: 90%; */ /* Let flexbox determine width/height */
+  /* height: 25%; */
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center; /* Keep this for vertical centering */
+  align-items: center; /* Keep this for horizontal centering */
+  text-align: center; /* Ensure text within flex items is centered */
+  pointer-events: auto;
+  /* Add padding if needed to prevent touching edges */
+  padding: 1rem;
+  /* Add margin top to push content down slightly if needed */
+  margin-top: 11rem; /* Increased to push everything down more */
+}
+
+.title {
+  font-family: 'Arial Black', Gadget, sans-serif;
+  font-size: 5rem; /* Reduced from 5.5rem to fit better */
+  color: #fff100; /* Even brighter yellow for better contrast */
+  margin-top: 0;
+  margin-bottom: 0.5rem; /* Reduced from 1rem to bring names closer */
+  position: relative; /* For pseudo-element background */
+  z-index: 2; /* Ensure it's above the pseudo-element */
+
+  /* Enhanced stroke effect with text-shadow */
+  text-shadow:
+    /* Dark stroke/outline effect - thicker */
+    -3px -3px 0 #000,  
+    3px -3px 0 #000,
+    -3px 3px 0 #000,
+    3px 3px 0 #000,
+    /* Additional diagonal stroke for better outline */
+    -2px -2px 0 #000,
+    2px -2px 0 #000,
+    -2px 2px 0 #000,
+    2px 2px 0 #000,
+    /* Inner bright glow */
+    0 0 4px #fff, /* White core */
+    0 0 10px rgba(255, 220, 0, 1),
+    /* Main fire glow - more intense */
+    0 0 20px rgba(255, 200, 0, 0.9),
+    0 0 30px rgba(255, 180, 0, 0.8),
+    0 0 45px rgba(255, 150, 0, 0.7),
+    0 0 60px rgba(255, 100, 0, 0.6),
+    0 0 80px rgba(255, 0, 0, 0.5); /* Wider Red outer glow */
+
+  filter: url(/fire-filter.svg#fireEffect);
+  animation: intenseGlitch 5s infinite alternate;
+  letter-spacing: 0.1em;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  text-align: center;
+}
+
+/* Add a semi-transparent background behind the title */
+.title:before {
+  content: '';
+  position: absolute;
+  top: -5px; /* Reduced from -10px */
+  left: 1px; /* Reduced from -20px */
+  right: 1px; /* Reduced from -20px */
+  bottom: -5px; /* Reduced from -10px */
+  background-color: rgba(0, 0, 0, 0.4); /* Semi-transparent black */
+  border-radius: 10px;
+  z-index: -1;
+}
+
+/* Intense Glitch animation */
+@keyframes intenseGlitch {
+  0%, 100% {
+      transform: skewX(0deg) scale(1);
+      /* Base intense fire glow */
+      text-shadow:
+        0 0 4px #fff,
+        0 0 8px rgba(255, 200, 0, 1),
+        0 0 15px rgba(255, 180, 0, 0.9),
+        0 0 25px rgba(255, 150, 0, 0.8),
+        0 0 35px rgba(255, 100, 0, 0.7),
+        0 0 50px rgba(255, 50, 0, 0.6),
+        0 0 70px rgba(255, 0, 0, 0.5);
+      opacity: 1;
+  }
+  /* Short, sharp glitch moments */
+  10%, 22% {
+    transform: skewX(1deg) translate(2px, -2px) scale(1.02);
+    text-shadow:
+      0 0 2px #fff,
+      0 0 15px rgba(255, 0, 0, 0.7); /* Red sharp glitch */
+      opacity: 0.85;
+  }
+  11%, 23% {
+     transform: skewX(-1deg) translate(-2px, 1px) scale(0.98);
+     text-shadow:
+      0 0 5px rgba(255, 255, 100, 0.8); /* Yellow sharp glitch */
+      opacity: 0.9;
+  }
+  /* Quick return to normal */
+  12%, 24% {
+       transform: skewX(0deg) scale(1);
+       text-shadow:
+        0 0 4px #fff,
+        0 0 8px rgba(255, 200, 0, 1),
+        0 0 15px rgba(255, 180, 0, 0.9),
+        0 0 25px rgba(255, 150, 0, 0.8),
+        0 0 35px rgba(255, 100, 0, 0.7),
+        0 0 50px rgba(255, 50, 0, 0.6),
+        0 0 70px rgba(255, 0, 0, 0.5);
+      opacity: 1;
+  }
+  /* Another glitch */
+  70% {
+    transform: translate(-3px, 2px) skewX(-0.5deg) scale(1.01);
+    text-shadow:
+        0 0 10px rgba(255, 0, 0, 0.8),
+        0 0 30px rgba(255, 100, 0, 0.5);
+    opacity: 0.9;
+  }
+  71% {
+    transform: translate(1px, -1px) skewX(0.5deg) scale(0.99);
+     text-shadow:
+        0 0 4px #fff,
+        0 0 8px rgba(255, 200, 0, 1),
+        0 0 15px rgba(255, 180, 0, 0.9),
+        0 0 25px rgba(255, 150, 0, 0.8),
+        0 0 35px rgba(255, 100, 0, 0.7),
+        0 0 50px rgba(255, 50, 0, 0.6),
+        0 0 70px rgba(255, 0, 0, 0.5);
+    opacity: 1;
+  }
+}
+
+/* Remove the energyFlicker animation - SVG filter handles movement */
+/* @keyframes energyFlicker { ... } */
+
+/* Subtle Glitch animation (adjusted for fire colors) */
+@keyframes subtleGlitch {
+  0%, 5%, 15%, 25%, 70%, 72%, 100% {
+      transform: skewX(0deg);
+      /* Maintain base fire glow during non-glitch parts */
+      text-shadow:
+        0 0 5px rgba(255, 180, 0, 0.9),
+        0 0 10px rgba(255, 150, 0, 0.8),
+        0 0 15px rgba(255, 100, 0, 0.7),
+        0 0 25px rgba(255, 50, 0, 0.6),
+        0 0 40px rgba(255, 0, 0, 0.5);
+      opacity: 1;
+  }
+  10% {
+    transform: skewX(0.5deg) translate(1px, -1px);
+    /* Slightly dimmed/distorted glow during glitch */
+     text-shadow:
+      0 0 3px rgba(255, 150, 0, 0.7),
+      0 0 12px rgba(255, 0, 0, 0.4);
+      opacity: 0.9;
+  }
+  20% {
+    transform: skewX(-0.3deg) translate(-1px, 1px);
+     text-shadow:
+      0 0 4px rgba(255, 180, 0, 0.8),
+      0 0 10px rgba(255, 50, 0, 0.5);
+      opacity: 0.95;
+  }
+   71% {
+     transform: translate(-1px, 1px) skewX(0.2deg);
+     /* Slightly shifted glow */
+      text-shadow:
+        0 0 6px rgba(255, 160, 0, 0.9),
+        0 0 12px rgba(255, 130, 0, 0.8),
+        0 0 20px rgba(255, 80, 0, 0.7),
+        0 0 30px rgba(255, 30, 0, 0.6),
+        0 0 45px rgba(255, 0, 0, 0.5);
+      opacity: 1;
+   }
+}
+
+/* Remove fullscreen button styles */
+/*
+.fullscreen-button {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  padding: 10px 15px;
+  background-color: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  color: white;
+  font-size: 0.9rem;
+  cursor: pointer;
+  border-radius: 5px;
+  z-index: 10; // Ensure button is above other elements
+  transition: background-color 0.3s ease;
+}
+
+.fullscreen-button:hover {
+  background-color: rgba(255, 255, 255, 0.4);
+}
+*/
+
+.presenters {
+  /* margin-top: -4rem; Remove negative margin */
+  margin-top: 1rem; /* Reduced from 3rem to bring closer to title */
+  display: flex;
+  justify-content: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  text-align: center; /* Add text-align center here */
+  width: 100%; /* Ensure it takes full width of parent */
+}
+
+.presenter-name {
+  font-family: 'Arial', Gadget, sans-serif;
+  font-size: 2.2rem; /* Increased from 1.8rem for better visibility */
+  color: #fff100; /* Brighter yellow for better contrast */
+  margin: 0; /* Remove vertical margin, rely on gap */
+  font-weight: bold; /* Make text bold for better visibility */
+  position: relative; /* For pseudo-element background */
+  z-index: 2; /* Ensure it's above the pseudo-element */
+
+  /* Enhanced stroke and glow */
+  text-shadow:
+    /* Dark stroke/outline effect - thicker and more defined */
+    -3px -3px 0 #000,  
+    3px -3px 0 #000,
+    -3px 3px 0 #000,
+    3px 3px 0 #000,
+    /* Additional diagonal stroke */
+    -2px -2px 0 #000,
+    2px -2px 0 #000,
+    -2px 2px 0 #000,
+    2px 2px 0 #000,
+    0 0 5px #fff, /* Brighter white core */
+    0 0 10px rgba(255, 220, 0, 1), /* Brighter glow */
+    0 0 15px rgba(255, 200, 0, 0.9),
+    0 0 25px rgba(255, 180, 0, 0.8),
+    0 0 35px rgba(255, 150, 0, 0.7),
+    0 0 45px rgba(255, 100, 0, 0.6),
+    0 0 55px rgba(255, 0, 0, 0.5); /* Red outer glow */
+
+  /* Reuse the same filter and glitch animation */
+  filter: url(/fire-filter.svg#fireEffect);
+  animation: intenseGlitch 5s infinite alternate;
+  letter-spacing: 0.05em; /* Slightly less spacing */
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  text-align: center;
+}
+
+/* Add a semi-transparent background behind the presenter names */
+.presenter-name:before {
+  content: '';
+  position: absolute;
+  top: 1px; /* Reduced from -5px */
+  left: -6px; /* Reduced from -10px */
+  right: -6px; /* Reduced from -10px */
+  bottom: -3px; /* Reduced from -5px */
+  background-color: rgba(0, 0, 0, 0.4); /* Semi-transparent black */
+  border-radius: 8px;
+  z-index: -1;
+}
+
+.name-tag-border {
+  position: fixed;
+  /* Adjust positioning/size as needed */
+  top: 10%;
+  left: 15%;
+  right: 15%;
+  bottom: 10%;
+  background-color: #fff; /* White main area */
+  border-radius: 15px;
+  z-index: 0;
+  pointer-events: none;
+  box-shadow: 
+    0 4px 10px rgba(0, 0, 0, 0.3), /* Base shadow */
+    0 0 20px rgba(255, 0, 0, 0.7), /* Subtle red glow - intensified */
+    0 0 40px rgba(255, 0, 0, 0.6), /* Medium red glow - intensified */
+    0 0 70px rgba(255, 0, 0, 0.5), /* Outer red glow - intensified */
+    0 0 100px rgba(255, 0, 0, 0.3); /* Additional outer red glow */
+  overflow: hidden; /* Needed for pseudo-elements */
+}
+
+/* Red top bar */
+.name-tag-border::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 35%; /* Adjust height of red bar */
+  background-color: #ff0000; /* Bright red */
+  border-radius: 15px 15px 0 0; /* Match top rounding */
+}
+
+/* Red dividing line */
+.name-tag-border::after {
+  content: '';
+  position: absolute;
+  top: 70%; /* Position line below the main white area start */
+  left: 5%; /* Indent line slightly */
+  width: 90%; /* Make line slightly shorter than width */
+  height: 4px; /* Reduced thickness slightly */
+  background-color: #ff0000; /* Bright red */
+}
+
+/* NEW: Style for the text on the red bar */
+.name-tag-header-text {
+  position: absolute;
+  /* Position within the top red bar area */
+  /* The red bar itself is top:0, height:35% of name-tag-border */
+  /* name-tag-border starts at top: 10% of viewport */
+  /* So, absolute top should be around 10% + (35%/2) = ~27.5%? Let's try */
+  top: 20%; /* Adjust this percentage based on visual result */
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: 'Arial Black', Gadget, sans-serif; /* Bold font */
+  font-size: 2.2rem; /* Keep as is */
+  color: white;
+  z-index: 2; /* Ensure it's above the red bar background */
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5); /* Optional subtle shadow */
+  pointer-events: none; /* Don't intercept clicks */
+  width: 100%; /* Allow text centering */
+  text-align: center; /* Center the text */
+}
+
+/* Style for the "Ambit" text that needs to be bigger */
+.ambit-highlight {
+  font-size: 2.8rem; /* Larger than parent text */
+  font-weight: bold;
+  /* Optional extra emphasis */
+  text-shadow: 2px 2px 3px rgba(0, 0, 0, 0.6);
+  display: inline-block; /* To allow transform if needed */
+  /* Optional subtle animation */
+  animation: pulse 2s infinite alternate;
+}
+
+@keyframes pulse {
+  from { transform: scale(1); }
+  to { transform: scale(1.05); }
+}
+
+.greeting {
+  /* position: static; Already relative/static due to parent change */
+  width: auto;
+  /* bottom: auto; */
+  /* left: auto; */
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 1.8rem;
+  color: #00ff00;
+  margin-bottom: 0rem; /* Adjusted spacing */
+  font-weight: normal;
+  text-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+  pointer-events: auto; /* Re-enable events if needed */
+  text-align: center; /* Keep this */
+}
+
+/* Style for the lab text that goes below presenter names */
+.lab-text {
+  font-family: 'Arial', sans-serif;
+  font-size: 1.5rem; /* Increased from 1.4rem */
+  color: #fff100; /* Brighter yellow for better contrast */
+  margin-top: 1rem;
+  font-weight: bold; /* Make text bold */
+  transform: translateX(-22px); /* Move text left by 30px */
+  position: relative; /* Ensure transform works properly */
+  
+  /* Enhanced stroke and glow */
+  text-shadow:
+    /* Dark stroke/outline effect */
+    -2px -2px 0 #000,  
+    2px -2px 0 #000,
+    -2px 2px 0 #000,
+    2px 2px 0 #000,
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000,
+    1px 1px 0 #000,
+    0 0 4px rgba(255, 255, 255, 0.9), /* Brighter white glow */
+    0 0 8px rgba(255, 220, 0, 0.8),
+    0 0 12px rgba(255, 180, 0, 0.7);
+    
+  /* No animation on this text to keep it stable */
+  letter-spacing: 0.05em;
+  text-align: center;
+}

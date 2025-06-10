@@ -1,0 +1,120 @@
+body,
+html {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden; /* Prevent scrollbars caused by animations moving off-screen */
+}
+
+.animated-background {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(60deg, #0f0c29, #302b63, #24243e, #533483, #1a1a2e);
+  animation: gradientBG 10s ease infinite; /* Faster gradient shift */
+  overflow: hidden;
+  z-index: -1; /* Ensure it stays behind content */
+}
+
+@keyframes gradientBG {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.shape {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.08); /* Slightly less visible */
+  animation: float 20s infinite ease-in-out alternate; /* Add alternate direction */
+  box-shadow: 0 0 5px rgba(255, 255, 255, 0.1),
+              0 0 10px rgba(255, 255, 255, 0.05); /* Reduce shadow */
+}
+
+.shape.circle {
+  border-radius: 50%;
+}
+
+.shape.square {
+  border-radius: 0; /* Keep it square */
+  animation-name: float, rotateSquare; /* Add rotation */
+  animation-timing-function: ease-in-out, linear;
+}
+
+.line {
+    position: absolute;
+    height: 1px; /* Thin lines */
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0));
+    opacity: 0.5;
+    animation: sweep 15s infinite linear;
+}
+
+.line-1 {
+    width: 50%;
+    top: 20%;
+    left: -50%; /* Start off-screen */
+    animation-duration: 10s;
+    animation-delay: 1s;
+}
+
+.line-2 {
+    width: 70%;
+    top: 50%;
+    left: -70%;
+    transform: rotate(10deg);
+    animation-duration: 12s;
+    animation-delay: 3s;
+}
+
+.line-3 {
+    width: 40%;
+    top: 80%;
+    left: -40%;
+    transform: rotate(-5deg);
+    animation-duration: 8s;
+    animation-delay: 5s;
+}
+
+@keyframes float {
+  0% {
+    transform: translateY(0px) translateX(0px);
+  }
+  50% {
+    /* More movement */
+    transform: translateY(-40px) translateX(30px);
+  }
+  100% {
+    transform: translateY(20px) translateX(-20px);
+  }
+}
+
+/* Add rotation for squares */
+@keyframes rotateSquare {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* Animation for lines */
+@keyframes sweep {
+    0% {
+        left: -100%; /* Start fully off-screen */
+        opacity: 0;
+    }
+    25% {
+        opacity: 0.6;
+    }
+    75% {
+        opacity: 0.6;
+    }
+    100% {
+        left: 100%; /* Move fully across */
+        opacity: 0;
+    }
+} 
