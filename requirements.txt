@@ -1,0 +1,22 @@
+# Core AI functionality
+openai>=1.0.0
+elevenlabs>=1.0.0
+python-dotenv>=1.0.0
+
+# Web backend
+asyncio>=3.4.3
+websockets>=11.0
+
+# Audio processing
+pydub>=0.25.1
+requests>=2.31.0
+
+# Voice Activity Detection
+torch>=1.9.0
+silero-vad>=4.0.0
+numpy>=1.21.0
+
+# Facial Recognition
+deepface>=0.0.79
+opencv-python>=4.8.0
+Pillow>=9.0.0 

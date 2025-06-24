@@ -1,0 +1,940 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ambit AI - Web Interface</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 Ambit AI</h1>
+            <p>One-Click Conversational AI Assistant</p>
+        </div>
+
+        <!-- Main Start Panel -->
+        <div class="main-panel">
+            <!-- Audio Visualization - Always Visible -->
+            <div class="audio-viz-container" id="audioViz">
+                <canvas id="audioCanvas"></canvas>
+                <div class="viz-overlay" id="vizOverlay">
+                    <span>🎵 Audio Visualizer</span>
+                </div>
+            </div>
+
+            <!-- Control Panel -->
+            <div class="control-panel">
+                <div class="primary-controls">
+                    <button id="startConvoBtn" class="start-conversation-btn">
+                        🚀 Start Conversation
+                    </button>
+                    
+                    <div class="secondary-controls">
+                        <button id="resetConvoBtn" class="control-btn reset-btn" disabled>
+                            🔄 Reset Conversation
+                        </button>
+                        <button id="clearLogBtn" class="control-btn clear-btn" disabled>
+                            🗑️ Clear Log
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="status-indicator" id="statusIndicator">
+                    <span class="connection-dot dot-disconnected"></span>
+                    Ready to start - Click above to begin
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="quick-actions">
+                <button class="quick-action-btn" id="voiceSettingsBtn">
+                    🎤 Voice Settings
+                </button>
+                <button class="quick-action-btn" id="advancedToggle">
+                    ⚙️ Advanced Settings
+                </button>
+            </div>
+            
+            <!-- Voice Settings Panel -->
+            <div class="voice-settings-panel" id="voiceSettingsPanel">
+                <h4>🎤 Voice Selection</h4>
+                <div class="voice-options">
+                    <div class="preset-voices">
+                        <h5>Preset Voices</h5>
+                        <div class="voice-grid">
+                            <label class="voice-option">
+                                <input type="radio" name="voicePreset" value="d2dPVWorYGa7CSQb2jt3" checked>
+                                <span class="voice-name">Kyle (Default)</span>
+                                <span class="voice-description">Your natural voice</span>
+                            </label>
+                            <label class="voice-option">
+                                <input type="radio" name="voicePreset" value="YOq2y2Up4RgXP2HyXjE5">
+                                <span class="voice-name">Deep Monster</span>
+                                <span class="voice-description">Dark and intimidating</span>
+                            </label>
+                            <label class="voice-option">
+                                <input type="radio" name="voicePreset" value="yjJ45q8TVCrtMhEKurxY">
+                                <span class="voice-name">Mad Scientist</span>
+                                <span class="voice-description">Eccentric and brilliant</span>
+                            </label>
+                            <label class="voice-option">
+                                <input type="radio" name="voicePreset" value="Sg8zw6Na9OqprPcNwJo1">
+                                <span class="voice-name">Anxious Nerd</span>
+                                <span class="voice-description">Nervous and intelligent</span>
+                            </label>
+                            <label class="voice-option">
+                                <input type="radio" name="voicePreset" value="YXpFCvM1S3JbWEJhoskW">
+                                <span class="voice-name">Cowboy</span>
+                                <span class="voice-description">Rugged and confident</span>
+                            </label>
+                            <label class="voice-option">
+                                <input type="radio" name="voicePreset" value="oR4uRy4fHDUGGISL0Rev">
+                                <span class="voice-name">Old Wizard</span>
+                                <span class="voice-description">Wise and mystical</span>
+                            </label>
+                            <label class="voice-option">
+                                <input type="radio" name="voicePreset" value="KKOYIrvUAjNXYCKUyxhh">
+                                <span class="voice-name">Anon</span>
+                                <span class="voice-description">Anonymous voice</span>
+                            </label>
+                            <label class="voice-option">
+                                <input type="radio" name="voicePreset" value="f2yUVfK5jdm78zlpcZ8C">
+                                <span class="voice-name">Funny Nerd</span>
+                                <span class="voice-description">Quirky and humorous</span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="custom-voice-section">
+                        <h5>Custom Voice ID</h5>
+                        <div class="custom-voice-input">
+                            <label class="voice-option custom-option">
+                                <input type="radio" name="voicePreset" value="custom">
+                                <span class="voice-name">Custom Voice</span>
+                            </label>
+                            <input type="text" id="customVoiceId" placeholder="Enter your custom voice ID..." disabled>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="voice-settings-actions">
+                    <button id="applyVoiceBtn" class="apply-voice-btn">Apply Voice</button>
+                    <button id="closeVoiceBtn" class="close-voice-btn">Close</button>
+                </div>
+            </div>
+
+            <div class="advanced-settings" id="advancedSettings">
+                <h4>⚙️ Advanced Configuration</h4>
+                
+                <div class="settings-section">
+                    <h5>API Keys Override</h5>
+                    <div class="settings-grid">
+                        <div class="setting-item">
+                            <label for="openaiApiKey">OpenAI API Key</label>
+                            <input type="password" id="openaiApiKey" placeholder="sk-...">
+                            <small>Override default OpenAI API key</small>
+                        </div>
+                        <div class="setting-item">
+                            <label for="elevenlabsApiKey">ElevenLabs API Key</label>
+                            <input type="password" id="elevenlabsApiKey" placeholder="Enter your ElevenLabs API key">
+                            <small>Override default ElevenLabs API key</small>
+                        </div>
+                    </div>
+                </div>
+
+
+
+                <div class="settings-section">
+                    <h5>Custom Instructions</h5>
+                    <div class="setting-item full-width">
+                        <label for="customInstructions">Additional Prompt Instructions</label>
+                        <textarea id="customInstructions" rows="4" placeholder="Add your own custom instructions to modify Ambit's behavior...&#10;&#10;Example: 'Always respond in a cheerful tone' or 'Focus on technical details when explaining concepts'"></textarea>
+                        <small>These instructions will be added to Ambit's system prompt</small>
+                    </div>
+                </div>
+
+                <div class="advanced-actions">
+                    <button id="saveAdvancedBtn" class="save-advanced-btn">💾 Save Settings</button>
+                    <button id="resetAdvancedBtn" class="reset-advanced-btn">🔄 Reset to Defaults</button>
+                </div>
+                
+                <div class="save-indicator" id="saveIndicator">
+                    <span class="save-message">✅ Settings saved successfully!</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Conversation Panel -->
+        <div class="conversation-panel">
+            <h3>💬 Conversation</h3>
+            
+            <div class="quick-input">
+                <input type="text" id="messageInput" placeholder="Type your message here..." disabled>
+                <button id="sendBtn" class="send-btn" disabled>Send</button>
+            </div>
+
+            <div class="conversation-log" id="conversationLog">
+                <div class="message-system">[System] Welcome to Ambit AI</div>
+                <div class="message-system">[System] Click "Start Conversation" to begin</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class AmbitWebGUI {
+            constructor() {
+                this.websocket = null;
+                this.isConnected = false;
+                this.isVoiceEnabled = false;
+                this.isRecording = false;
+                this.conversationStarted = false;
+                
+                // WebRTC Audio
+                this.mediaStream = null;
+                this.audioContext = null;
+                this.processor = null;
+                this.audioBuffer = [];
+                this.silenceCounter = 0;
+                this.speechCounter = 0;
+                this.inSpeech = false;
+                this.vadThreshold = 0.6;
+                
+                this.animationFrameId = null;
+                this.canvasCtx = null;
+                this.waveAmplitude = 0;
+                this.targetAmplitude = 0;
+                this.wavePhase = 0;
+                
+                this.initializeElements();
+                this.setupEventListeners();
+                this.setupAudioVisualization();
+                this.loadSettings();
+            }
+
+            initializeElements() {
+                // Main elements
+                this.startConvoBtn = document.getElementById('startConvoBtn');
+                this.statusIndicator = document.getElementById('statusIndicator');
+                this.audioViz = document.getElementById('audioViz');
+                this.audioCanvas = document.getElementById('audioCanvas');
+                this.vizOverlay = document.getElementById('vizOverlay');
+                
+                // Control elements
+                this.resetConvoBtn = document.getElementById('resetConvoBtn');
+                this.clearLogBtn = document.getElementById('clearLogBtn');
+                this.voiceSettingsBtn = document.getElementById('voiceSettingsBtn');
+                
+                // Voice settings elements
+                this.voiceSettingsPanel = document.getElementById('voiceSettingsPanel');
+                this.voicePresetRadios = document.querySelectorAll('input[name="voicePreset"]');
+                this.customVoiceInput = document.getElementById('customVoiceId');
+                this.applyVoiceBtn = document.getElementById('applyVoiceBtn');
+                this.closeVoiceBtn = document.getElementById('closeVoiceBtn');
+                
+                // Settings elements
+                this.advancedToggle = document.getElementById('advancedToggle');
+                this.advancedSettings = document.getElementById('advancedSettings');
+                
+                // Advanced settings elements
+                this.openaiApiKeyInput = document.getElementById('openaiApiKey');
+                this.elevenlabsApiKeyInput = document.getElementById('elevenlabsApiKey');
+                this.customInstructionsTextarea = document.getElementById('customInstructions');
+                this.saveAdvancedBtn = document.getElementById('saveAdvancedBtn');
+                this.resetAdvancedBtn = document.getElementById('resetAdvancedBtn');
+                this.saveIndicator = document.getElementById('saveIndicator');
+                
+                // Conversation elements
+                this.messageInput = document.getElementById('messageInput');
+                this.sendBtn = document.getElementById('sendBtn');
+                this.conversationLog = document.getElementById('conversationLog');
+            }
+
+            setupEventListeners() {
+                // Main start button
+                this.startConvoBtn.addEventListener('click', () => this.startConversation());
+                
+                // Control buttons
+                this.resetConvoBtn.addEventListener('click', () => this.resetConversation());
+                this.clearLogBtn.addEventListener('click', () => this.clearLog());
+                this.voiceSettingsBtn.addEventListener('click', () => this.openVoiceSettings());
+                
+                // Voice settings panel
+                this.applyVoiceBtn.addEventListener('click', () => this.applyVoiceSelection());
+                this.closeVoiceBtn.addEventListener('click', () => this.closeVoiceSettings());
+                
+                // Voice preset radio buttons
+                this.voicePresetRadios.forEach(radio => {
+                    radio.addEventListener('change', () => this.handleVoicePresetChange());
+                });
+                
+                // Advanced settings toggle
+                this.advancedToggle.addEventListener('click', () => this.toggleAdvancedSettings());
+                
+                // Advanced settings buttons
+                this.saveAdvancedBtn.addEventListener('click', () => this.saveAdvancedSettings());
+                this.resetAdvancedBtn.addEventListener('click', () => this.resetAdvancedSettings());
+                
+
+                
+                // Message input
+                this.messageInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        this.sendMessage();
+                    }
+                });
+                this.sendBtn.addEventListener('click', () => this.sendMessage());
+            }
+
+            setupAudioVisualization() {
+                // Initialize audio visualization immediately since it's always visible
+                setTimeout(() => {
+                    this.canvasCtx = this.audioCanvas.getContext('2d');
+                    if (!this.canvasCtx) {
+                        console.error("Failed to get canvas context");
+                        return;
+                    }
+                    this.audioCanvas.width = this.audioCanvas.offsetWidth;
+                    this.audioCanvas.height = this.audioCanvas.offsetHeight;
+                    this.waveAmplitude = 0;
+                    this.targetAmplitude = 5; // Small idle animation
+                    this.wavePhase = 0;
+                    this.renderWave(); // Start rendering loop immediately
+                }, 100);
+            }
+
+            loadSettings() {
+                const savedVoiceId = localStorage.getItem('ambit_voice_id');
+                if (savedVoiceId) {
+                    // Set the correct radio button based on saved voice ID
+                    const matchingRadio = document.querySelector(`input[name="voicePreset"][value="${savedVoiceId}"]`);
+                    if (matchingRadio) {
+                        matchingRadio.checked = true;
+                    } else {
+                        // If it's a custom voice ID, select custom option and populate the input
+                        const customRadio = document.querySelector('input[name="voicePreset"][value="custom"]');
+                        if (customRadio) {
+                            customRadio.checked = true;
+                            this.customVoiceInput.value = savedVoiceId;
+                            this.customVoiceInput.disabled = false;
+                        }
+                    }
+                }
+
+                // Load advanced settings
+                const savedOpenAIKey = localStorage.getItem('ambit_openai_key');
+                if (savedOpenAIKey) {
+                    this.openaiApiKeyInput.value = savedOpenAIKey;
+                }
+
+                const savedElevenLabsKey = localStorage.getItem('ambit_elevenlabs_key');
+                if (savedElevenLabsKey) {
+                    this.elevenlabsApiKeyInput.value = savedElevenLabsKey;
+                }
+
+                const savedCustomInstructions = localStorage.getItem('ambit_custom_instructions');
+                if (savedCustomInstructions) {
+                    this.customInstructionsTextarea.value = savedCustomInstructions;
+                }
+            }
+
+            toggleAdvancedSettings() {
+                const isVisible = this.advancedSettings.style.display !== 'none';
+                
+                if (!isVisible) {
+                    // Close all other panels first
+                    this.closeAllSettingsPanels();
+                    
+                    // Open advanced settings
+                    this.advancedSettings.style.display = 'block';
+                    this.advancedToggle.innerHTML = '⚙️ Hide Settings';
+                    this.log('⚙️ Advanced settings opened', 'system');
+                } else {
+                    // Close advanced settings
+                    this.closeAllSettingsPanels();
+                    this.log('⚙️ Advanced settings closed', 'system');
+                }
+            }
+
+            async startConversation() {
+                if (this.conversationStarted) {
+                    this.stopConversation();
+                    return;
+                }
+
+                try {
+                    this.startConvoBtn.disabled = true;
+                    this.startConvoBtn.innerHTML = '🔄 Starting...';
+                    this.updateStatus('Connecting to Ambit AI...', 'connecting');
+
+                    // Step 1: Connect to backend
+                    await this.connect();
+                    
+                    // Step 2: Enable voice automatically
+                    await this.enableVoice();
+                    
+                    // Step 3: Start WebRTC audio
+                    await this.startWebRTCAudio();
+                    
+                    // Step 4: Send initial configuration to backend
+                    const initialSettings = this.getAdvancedSettings();
+                    this.websocket.send(JSON.stringify({
+                        type: 'configure',
+                        voiceId: initialSettings.voiceId,
+                        customInstructions: initialSettings.customInstructions,
+                        openaiApiKey: initialSettings.openaiApiKey,
+                        elevenlabsApiKey: initialSettings.elevenlabsApiKey,
+                        maxTokens: initialSettings.maxTokens
+                    }));
+                    
+                    // Update UI for active conversation
+                    this.conversationStarted = true;
+                    this.startConvoBtn.innerHTML = '⏹️ Stop Conversation';
+                    this.startConvoBtn.disabled = false;
+                    
+                    // Enable control buttons
+                    this.resetConvoBtn.disabled = false;
+                    this.clearLogBtn.disabled = false;
+                    
+                    // Hide the overlay text on the visualizer
+                    this.vizOverlay.style.display = 'none';
+
+                    this.updateStatus('🎤 Listening... Speak now!', 'connected');
+                    
+                    this.log('✅ Conversation started! You can now speak or type.', 'system');
+                    
+                    // Show active settings
+                    const settings = this.getAdvancedSettings();
+                    const voiceName = localStorage.getItem('ambit_voice_name') || 'Kyle (Default)';
+                    this.log(`🎤 Using voice: ${voiceName}`, 'system');
+                    
+                    if (settings.customInstructions) {
+                        this.log(`📝 Custom instructions active (${settings.customInstructions.length} chars)`, 'system');
+                    }
+                    
+                    if (settings.openaiApiKey) {
+                        this.log(`🔑 Using custom OpenAI API key`, 'system');
+                    }
+                    
+                    if (settings.elevenlabsApiKey) {
+                        this.log(`🔑 Using custom ElevenLabs API key`, 'system');
+                    }
+                    
+                } catch (error) {
+                    this.log(`❌ Failed to start conversation: ${error.message}`, 'error');
+                    this.updateStatus('Failed to start - Try again', 'disconnected');
+                    this.startConvoBtn.innerHTML = '🚀 Start Conversation';
+                    this.startConvoBtn.disabled = false;
+                }
+            }
+
+            stopConversation() {
+                this.conversationStarted = false;
+                this.stopWebRTCAudio();
+                
+                if (this.websocket) {
+                    this.websocket.close();
+                }
+                
+                this.startConvoBtn.innerHTML = '🚀 Start Conversation';
+                this.updateStatus('Conversation stopped', 'disconnected');
+                this.messageInput.disabled = true;
+                this.sendBtn.disabled = true;
+                
+                // Disable control buttons
+                this.resetConvoBtn.disabled = true;
+                this.clearLogBtn.disabled = true;
+                
+                // Show the overlay text on the visualizer again
+                this.vizOverlay.style.display = 'flex';
+                
+                // Reduce animation amplitude for idle state
+                this.targetAmplitude = 5;
+                
+                this.log('⏹️ Conversation stopped', 'system');
+            }
+
+            updateStatus(message, type) {
+                const dot = this.statusIndicator.querySelector('.connection-dot');
+                dot.className = `connection-dot dot-${type}`;
+                this.statusIndicator.innerHTML = `<span class="connection-dot dot-${type}"></span>${message}`;
+            }
+
+            log(message, type = 'system') {
+                const timestamp = new Date().toLocaleTimeString();
+                const logElement = document.getElementById('conversationLog');
+                const messageClass = `message-${type}`;
+                logElement.innerHTML += `<div class="${messageClass}">[${timestamp}] ${message}</div>`;
+                logElement.scrollTop = logElement.scrollHeight;
+            }
+
+            async connect() {
+                return new Promise((resolve, reject) => {
+                    try {
+                        this.websocket = new WebSocket('ws://localhost:8765');
+                        
+                        this.websocket.onopen = () => {
+                            this.isConnected = true;
+                            this.messageInput.disabled = false;
+                            this.sendBtn.disabled = false;
+                            resolve();
+                        };
+                        
+                        this.websocket.onmessage = (event) => {
+                            const data = JSON.parse(event.data);
+                            this.handleMessage(data);
+                        };
+                        
+                        this.websocket.onclose = () => {
+                            this.isConnected = false;
+                            if (this.conversationStarted) {
+                                this.stopConversation();
+                            }
+                        };
+                        
+                        this.websocket.onerror = (error) => {
+                            reject(new Error('Connection failed'));
+                        };
+                        
+                        // Timeout after 5 seconds
+                        setTimeout(() => {
+                            if (!this.isConnected) {
+                                reject(new Error('Connection timeout'));
+                            }
+                        }, 5000);
+                        
+                    } catch (error) {
+                        reject(error);
+                    }
+                });
+            }
+
+            async enableVoice() {
+                this.isVoiceEnabled = true;
+                // Voice is automatically enabled
+            }
+
+            async startWebRTCAudio() {
+                try {
+                    // Request microphone with WebRTC AEC
+                    this.mediaStream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: true,
+                            sampleRate: 16000,
+                            channelCount: 1
+                        }
+                    });
+                    
+                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                        sampleRate: 16000
+                    });
+                    
+                    const source = this.audioContext.createMediaStreamSource(this.mediaStream);
+                    this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
+                    
+                    this.processor.onaudioprocess = (event) => this.processAudio(event);
+                    source.connect(this.processor);
+                    this.processor.connect(this.audioContext.destination);
+                    
+                    this.isRecording = true;
+                    
+                } catch (error) {
+                    throw new Error(`Microphone access failed: ${error.message}`);
+                }
+            }
+
+            processAudio(event) {
+                if (!this.isRecording) return;
+                
+                const audioData = event.inputBuffer.getChannelData(0);
+                const audioLevel = this.calculateAudioLevel(audioData);
+                this.targetAmplitude = audioLevel * 300; // Adjust sensitivity
+                
+                // Send continuous audio stream to backend for Silero VAD processing
+                this.sendAudioStream(audioData);
+                
+                // Update status based on audio activity (visual feedback only)
+                if (audioLevel > this.vadThreshold) {
+                    if (!this.inSpeech) {
+                        this.inSpeech = true;
+                        this.updateStatus('🗣️ Speaking detected...', 'connecting');
+                    }
+                    this.speechCounter++;
+                    this.silenceCounter = 0;
+                } else {
+                    this.silenceCounter++;
+                    this.speechCounter = 0;
+                    
+                    if (this.inSpeech && this.silenceCounter > 10) {
+                        this.inSpeech = false;
+                        this.updateStatus('🎤 Listening... Speak now!', 'connected');
+                    }
+                }
+            }
+
+            calculateAudioLevel(audioData) {
+                let sum = 0;
+                for (let i = 0; i < audioData.length; i++) {
+                    sum += audioData[i] * audioData[i];
+                }
+                return Math.sqrt(sum / audioData.length);
+            }
+
+            updateVisualization(level) {
+                // This function is now deprecated in favor of renderWave
+            }
+
+            renderWave() {
+                this.animationFrameId = requestAnimationFrame(() => this.renderWave());
+                if (!this.canvasCtx) return;
+
+                // Smoothly transition current amplitude to the target
+                this.waveAmplitude += (this.targetAmplitude - this.waveAmplitude) * 0.1;
+                this.waveAmplitude = Math.max(0, this.waveAmplitude);
+
+                const width = this.audioCanvas.width;
+                const height = this.audioCanvas.height;
+                this.canvasCtx.clearRect(0, 0, width, height);
+
+                this.wavePhase += 0.05; // Speed of the wave animation
+
+                this.canvasCtx.lineWidth = 2;
+
+                // Draw multiple waves for a layered effect
+                const waveColors = ['rgb(0, 122, 255)', 'rgb(52, 199, 89)', 'rgb(255, 59, 48)'];
+
+                for (let i = 0; i < waveColors.length; i++) {
+                    const color = waveColors[i];
+                    const amplitudeMultiplier = 1 - (i / 4);
+                    const waveComplexity = 2 + i * 0.8;
+
+                    const path = new Path2D();
+                    for (let x = 0; x < width; x++) {
+                        const angle = this.wavePhase * (1 + i * 0.2) + (x / width) * Math.PI * 2 * waveComplexity;
+                        const detailAngle = this.wavePhase * (2.5 + i) + (x / width) * Math.PI * (6 + i);
+                        
+                        const yOffset = Math.sin(angle) * this.waveAmplitude * amplitudeMultiplier;
+                        const detailOffset = Math.sin(detailAngle) * (this.waveAmplitude / 3) * amplitudeMultiplier;
+
+                        const y = height / 2 + yOffset + detailOffset;
+
+                        if (x === 0) {
+                            path.moveTo(x, y);
+                        } else {
+                            path.lineTo(x, y);
+                        }
+                    }
+
+                    // 1. Draw Glow
+                    this.canvasCtx.strokeStyle = color;
+                    this.canvasCtx.lineWidth = 5;
+                    this.canvasCtx.filter = 'blur(10px)';
+                    this.canvasCtx.stroke(path);
+                    
+                    // 2. Draw main line on top
+                    this.canvasCtx.lineWidth = 2;
+                    this.canvasCtx.filter = 'none';
+                    this.canvasCtx.stroke(path);
+                }
+            }
+
+            sendAudioStream(audioData) {
+                if (!this.isConnected) return;
+                
+                // Send continuous audio chunks for Silero VAD processing
+                const audioArray = new Float32Array(audioData);
+                const audioBytes = new Uint8Array(audioArray.buffer);
+                const audioBase64 = btoa(String.fromCharCode(...audioBytes));
+                
+                // Get all current settings including voice and custom instructions
+                const settings = this.getAdvancedSettings();
+                
+                this.websocket.send(JSON.stringify({
+                    type: 'audio_stream',
+                    data: audioBase64,
+                    sampleRate: 16000,
+                    voiceId: settings.voiceId,
+                    customInstructions: settings.customInstructions,
+                    openaiApiKey: settings.openaiApiKey,
+                    elevenlabsApiKey: settings.elevenlabsApiKey,
+                    maxTokens: settings.maxTokens
+                }));
+            }
+
+            sendAudio() {
+                // Legacy method - now handled by sendAudioStream
+                // Kept for compatibility
+            }
+
+            stopWebRTCAudio() {
+                this.isRecording = false;
+                
+                if (this.mediaStream) {
+                    this.mediaStream.getTracks().forEach(track => track.stop());
+                }
+                if (this.processor) {
+                    this.processor.disconnect();
+                }
+                if (this.audioContext) {
+                    this.audioContext.close();
+                }
+            }
+
+            sendMessage() {
+                const message = this.messageInput.value.trim();
+                if (!message || !this.isConnected) return;
+                
+                this.messageInput.value = '';
+                this.log(`👤 You: ${message}`, 'user');
+                
+                // Get all current settings including voice and custom instructions
+                const settings = this.getAdvancedSettings();
+                
+                this.websocket.send(JSON.stringify({
+                    type: 'message',
+                    text: message,
+                    voiceId: settings.voiceId,
+                    customInstructions: settings.customInstructions,
+                    openaiApiKey: settings.openaiApiKey,
+                    elevenlabsApiKey: settings.elevenlabsApiKey,
+                    maxTokens: settings.maxTokens
+                }));
+            }
+
+            handleMessage(data) {
+                switch (data.type) {
+                    case 'transcription':
+                        this.log(`🎤 You said: "${data.text}"`, 'voice');
+                        break;
+                    case 'response':
+                        this.log(`🤖 Ambit: ${data.text}`, 'ambit');
+                        break;
+                    case 'audio_ready':
+                        this.log(`🔊 Playing AI response...`, 'system');
+                        this.playAudio(data.audioUrl);
+                        break;
+                    case 'error':
+                        this.log(`❌ Error: ${data.message}`, 'error');
+                        break;
+                    case 'status':
+                        this.log(`ℹ️ ${data.message}`, 'system');
+                        break;
+                }
+            }
+
+            playAudio(audioUrl) {
+                const audio = new Audio(audioUrl);
+                audio.play().catch(error => {
+                    this.log(`❌ Audio playback failed: ${error.message}`, 'error');
+                });
+            }
+
+            resetConversation() {
+                if (this.conversationStarted) {
+                    this.stopConversation();
+                }
+                
+                // Clear conversation log
+                this.conversationLog.innerHTML = `
+                    <div class="message-system">[System] Welcome to Ambit AI</div>
+                    <div class="message-system">[System] Click "Start Conversation" to begin</div>
+                `;
+                
+                // Reset any saved settings if needed
+                this.log('🔄 Conversation reset', 'system');
+            }
+
+            clearLog() {
+                // Clear only the conversation log content
+                this.conversationLog.innerHTML = `
+                    <div class="message-system">[System] Log cleared</div>
+                `;
+                this.log('🗑️ Log cleared', 'system');
+            }
+
+            openVoiceSettings() {
+                // Close all other panels first
+                this.closeAllSettingsPanels();
+                
+                // Show the voice settings panel
+                this.voiceSettingsPanel.style.display = 'block';
+                this.log('🎤 Voice settings opened', 'system');
+            }
+
+            closeVoiceSettings() {
+                // Close all settings panels
+                this.closeAllSettingsPanels();
+                this.log('🎤 Voice settings closed', 'system');
+            }
+
+            handleVoicePresetChange() {
+                const selectedVoice = document.querySelector('input[name="voicePreset"]:checked');
+                if (selectedVoice) {
+                    if (selectedVoice.value === 'custom') {
+                        // Enable custom voice input
+                        this.customVoiceInput.disabled = false;
+                        this.customVoiceInput.focus();
+                    } else {
+                        // Disable custom voice input
+                        this.customVoiceInput.disabled = true;
+                        this.customVoiceInput.value = '';
+                    }
+                }
+            }
+
+            applyVoiceSelection() {
+                const selectedVoice = document.querySelector('input[name="voicePreset"]:checked');
+                if (!selectedVoice) {
+                    this.log('❌ Please select a voice option', 'error');
+                    return;
+                }
+
+                let voiceId;
+                let voiceName;
+
+                if (selectedVoice.value === 'custom') {
+                    voiceId = this.customVoiceInput.value.trim();
+                    if (!voiceId) {
+                        this.log('❌ Please enter a custom voice ID', 'error');
+                        return;
+                    }
+                    voiceName = 'Custom Voice';
+                } else {
+                    voiceId = selectedVoice.value;
+                    voiceName = selectedVoice.parentElement.querySelector('.voice-name').textContent;
+                }
+
+                // Save to localStorage
+                localStorage.setItem('ambit_voice_id', voiceId);
+                localStorage.setItem('ambit_voice_name', voiceName);
+
+                // Close the voice settings panel
+                this.closeVoiceSettings();
+
+                this.log(`🎤 Voice changed to: ${voiceName} (ID: ${voiceId})`, 'system');
+                console.log('Voice saved:', { voiceName, voiceId });
+            }
+
+            saveAdvancedSettings() {
+                // Save API keys (only if they have values)
+                const openaiKey = this.openaiApiKeyInput.value.trim();
+                if (openaiKey) {
+                    localStorage.setItem('ambit_openai_key', openaiKey);
+                } else {
+                    localStorage.removeItem('ambit_openai_key');
+                }
+
+                const elevenlabsKey = this.elevenlabsApiKeyInput.value.trim();
+                if (elevenlabsKey) {
+                    localStorage.setItem('ambit_elevenlabs_key', elevenlabsKey);
+                } else {
+                    localStorage.removeItem('ambit_elevenlabs_key');
+                }
+
+                // Save custom instructions
+                const customInstructions = this.customInstructionsTextarea.value.trim();
+                if (customInstructions) {
+                    localStorage.setItem('ambit_custom_instructions', customInstructions);
+                } else {
+                    localStorage.removeItem('ambit_custom_instructions');
+                }
+
+                // Show save indicator with animation
+                this.saveIndicator.classList.add('show');
+                
+                // Change button temporarily to show saved state
+                const originalText = this.saveAdvancedBtn.innerHTML;
+                this.saveAdvancedBtn.innerHTML = '✅ Saved!';
+                this.saveAdvancedBtn.style.background = 'linear-gradient(135deg, #10B981 0%, #059669 100%)';
+                
+                // Hide indicator and reset button after 3 seconds
+                setTimeout(() => {
+                    this.saveIndicator.classList.remove('show');
+                    this.saveAdvancedBtn.innerHTML = originalText;
+                    this.saveAdvancedBtn.style.background = '';
+                }, 3000);
+
+                this.log('💾 Advanced settings saved successfully!', 'system');
+                this.log('✅ API keys and custom instructions will override defaults', 'system');
+            }
+
+            resetAdvancedSettings() {
+                // Clear all advanced settings
+                this.openaiApiKeyInput.value = '';
+                this.elevenlabsApiKeyInput.value = '';
+                this.customInstructionsTextarea.value = '';
+
+                // Remove from localStorage
+                localStorage.removeItem('ambit_openai_key');
+                localStorage.removeItem('ambit_elevenlabs_key');
+                localStorage.removeItem('ambit_custom_instructions');
+
+                // Show reset confirmation
+                const originalText = this.resetAdvancedBtn.innerHTML;
+                this.resetAdvancedBtn.innerHTML = '✅ Reset!';
+                this.resetAdvancedBtn.style.background = 'linear-gradient(135deg, #6b7280 0%, #9ca3af 100%)';
+                
+                setTimeout(() => {
+                    this.resetAdvancedBtn.innerHTML = originalText;
+                    this.resetAdvancedBtn.style.background = '';
+                }, 2000);
+
+                this.log('🔄 Advanced settings reset to defaults', 'system');
+                this.log('ℹ️ Using default API keys and instructions', 'system');
+            }
+
+            getAdvancedSettings() {
+                // Get voice ID from localStorage (set by voice settings panel)
+                const voiceId = localStorage.getItem('ambit_voice_id') || 'd2dPVWorYGa7CSQb2jt3';
+                
+                // Get saved values or current input values
+                const openaiKey = this.openaiApiKeyInput?.value?.trim() || 
+                                  localStorage.getItem('ambit_openai_key') || 
+                                  null;
+                
+                const elevenlabsKey = this.elevenlabsApiKeyInput?.value?.trim() || 
+                                      localStorage.getItem('ambit_elevenlabs_key') || 
+                                      null;
+                
+                const customInstructions = this.customInstructionsTextarea?.value?.trim() || 
+                                          localStorage.getItem('ambit_custom_instructions') || 
+                                          null;
+                
+                const settings = {
+                    // These will override backend defaults when provided
+                    openaiApiKey: openaiKey,
+                    elevenlabsApiKey: elevenlabsKey,
+                    customInstructions: customInstructions,
+                    voiceId: voiceId,
+                    maxTokens: 150  // Default tokens
+                };
+                
+                // Debug log to verify settings
+                console.log('Advanced settings being sent:', {
+                    voiceId: settings.voiceId,
+                    hasCustomInstructions: !!settings.customInstructions,
+                    customInstructionsLength: settings.customInstructions?.length || 0,
+                    hasOpenAIKey: !!settings.openaiApiKey,
+                    hasElevenLabsKey: !!settings.elevenlabsApiKey
+                });
+                
+                return settings;
+            }
+
+            closeAllSettingsPanels() {
+                // Close voice settings
+                this.voiceSettingsPanel.style.display = 'none';
+                
+                // Close advanced settings
+                this.advancedSettings.style.display = 'none';
+                this.advancedToggle.innerHTML = '⚙️ Advanced Settings';
+            }
+        }
+
+        // Initialize the app
+        const app = new AmbitWebGUI();
+    </script>
+</body>
+</html> 
