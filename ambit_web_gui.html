@@ -8,18 +8,43 @@
 </head>
 <body>
     <div class="container">
+        <!-- Top Corner Settings -->
+        <div class="top-settings">
+            <button class="corner-btn top-left" id="voiceSettingsBtn">
+                🎤 Voice
+            </button>
+            <button class="corner-btn top-right" id="advancedToggle">
+                ⚙️ Settings
+            </button>
+        </div>
+
         <div class="header">
             <h1>🤖 Ambit AI</h1>
             <p>One-Click Conversational AI Assistant</p>
         </div>
 
-        <!-- Main Start Panel -->
+        <!-- Main Panel -->
         <div class="main-panel">
-            <!-- Audio Visualization - Always Visible -->
+            <!-- Audio Visualization -->
             <div class="audio-viz-container" id="audioViz">
                 <canvas id="audioCanvas"></canvas>
                 <div class="viz-overlay" id="vizOverlay">
                     <span>🎵 Audio Visualizer</span>
+                </div>
+            </div>
+
+            <!-- Conversation Panel - Right under audio viz -->
+            <div class="conversation-panel">
+                <h3>💬 Conversation</h3>
+                
+                <div class="conversation-log" id="conversationLog">
+                    <div class="message-system">[System] Welcome to Ambit AI</div>
+                    <div class="message-system">[System] Click "Start Conversation" to begin</div>
+                </div>
+
+                <div class="quick-input">
+                    <input type="text" id="messageInput" placeholder="Type your message here..." disabled>
+                    <button id="sendBtn" class="send-btn" disabled>Send</button>
                 </div>
             </div>
 
@@ -45,141 +70,123 @@
                     Ready to start - Click above to begin
                 </div>
             </div>
-
-            <!-- Quick Actions -->
-            <div class="quick-actions">
-                <button class="quick-action-btn" id="voiceSettingsBtn">
-                    🎤 Voice Settings
-                </button>
-                <button class="quick-action-btn" id="advancedToggle">
-                    ⚙️ Advanced Settings
-                </button>
-            </div>
-            
-            <!-- Voice Settings Panel -->
-            <div class="voice-settings-panel" id="voiceSettingsPanel">
-                <h4>🎤 Voice Selection</h4>
-                <div class="voice-options">
-                    <div class="preset-voices">
-                        <h5>Preset Voices</h5>
-                        <div class="voice-grid">
-                            <label class="voice-option">
-                                <input type="radio" name="voicePreset" value="d2dPVWorYGa7CSQb2jt3" checked>
-                                <span class="voice-name">Kyle (Default)</span>
-                                <span class="voice-description">Your natural voice</span>
-                            </label>
-                            <label class="voice-option">
-                                <input type="radio" name="voicePreset" value="YOq2y2Up4RgXP2HyXjE5">
-                                <span class="voice-name">Deep Monster</span>
-                                <span class="voice-description">Dark and intimidating</span>
-                            </label>
-                            <label class="voice-option">
-                                <input type="radio" name="voicePreset" value="yjJ45q8TVCrtMhEKurxY">
-                                <span class="voice-name">Mad Scientist</span>
-                                <span class="voice-description">Eccentric and brilliant</span>
-                            </label>
-                            <label class="voice-option">
-                                <input type="radio" name="voicePreset" value="Sg8zw6Na9OqprPcNwJo1">
-                                <span class="voice-name">Anxious Nerd</span>
-                                <span class="voice-description">Nervous and intelligent</span>
-                            </label>
-                            <label class="voice-option">
-                                <input type="radio" name="voicePreset" value="YXpFCvM1S3JbWEJhoskW">
-                                <span class="voice-name">Cowboy</span>
-                                <span class="voice-description">Rugged and confident</span>
-                            </label>
-                            <label class="voice-option">
-                                <input type="radio" name="voicePreset" value="oR4uRy4fHDUGGISL0Rev">
-                                <span class="voice-name">Old Wizard</span>
-                                <span class="voice-description">Wise and mystical</span>
-                            </label>
-                            <label class="voice-option">
-                                <input type="radio" name="voicePreset" value="KKOYIrvUAjNXYCKUyxhh">
-                                <span class="voice-name">Anon</span>
-                                <span class="voice-description">Anonymous voice</span>
-                            </label>
-                            <label class="voice-option">
-                                <input type="radio" name="voicePreset" value="f2yUVfK5jdm78zlpcZ8C">
-                                <span class="voice-name">Funny Nerd</span>
-                                <span class="voice-description">Quirky and humorous</span>
-                            </label>
-                        </div>
-                    </div>
-                    
-                    <div class="custom-voice-section">
-                        <h5>Custom Voice ID</h5>
-                        <div class="custom-voice-input">
-                            <label class="voice-option custom-option">
-                                <input type="radio" name="voicePreset" value="custom">
-                                <span class="voice-name">Custom Voice</span>
-                            </label>
-                            <input type="text" id="customVoiceId" placeholder="Enter your custom voice ID..." disabled>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="voice-settings-actions">
-                    <button id="applyVoiceBtn" class="apply-voice-btn">Apply Voice</button>
-                    <button id="closeVoiceBtn" class="close-voice-btn">Close</button>
-                </div>
-            </div>
-
-            <div class="advanced-settings" id="advancedSettings">
-                <h4>⚙️ Advanced Configuration</h4>
-                
-                <div class="settings-section">
-                    <h5>API Keys Override</h5>
-                    <div class="settings-grid">
-                        <div class="setting-item">
-                            <label for="openaiApiKey">OpenAI API Key</label>
-                            <input type="password" id="openaiApiKey" placeholder="sk-...">
-                            <small>Override default OpenAI API key</small>
-                        </div>
-                        <div class="setting-item">
-                            <label for="elevenlabsApiKey">ElevenLabs API Key</label>
-                            <input type="password" id="elevenlabsApiKey" placeholder="Enter your ElevenLabs API key">
-                            <small>Override default ElevenLabs API key</small>
-                        </div>
-                    </div>
-                </div>
-
-
-
-                <div class="settings-section">
-                    <h5>Custom Instructions</h5>
-                    <div class="setting-item full-width">
-                        <label for="customInstructions">Additional Prompt Instructions</label>
-                        <textarea id="customInstructions" rows="4" placeholder="Add your own custom instructions to modify Ambit's behavior...&#10;&#10;Example: 'Always respond in a cheerful tone' or 'Focus on technical details when explaining concepts'"></textarea>
-                        <small>These instructions will be added to Ambit's system prompt</small>
-                    </div>
-                </div>
-
-                <div class="advanced-actions">
-                    <button id="saveAdvancedBtn" class="save-advanced-btn">💾 Save Settings</button>
-                    <button id="resetAdvancedBtn" class="reset-advanced-btn">🔄 Reset to Defaults</button>
-                </div>
-                
-                <div class="save-indicator" id="saveIndicator">
-                    <span class="save-message">✅ Settings saved successfully!</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Conversation Panel -->
-        <div class="conversation-panel">
-            <h3>💬 Conversation</h3>
-            
-            <div class="quick-input">
-                <input type="text" id="messageInput" placeholder="Type your message here..." disabled>
-                <button id="sendBtn" class="send-btn" disabled>Send</button>
-            </div>
-
-            <div class="conversation-log" id="conversationLog">
-                <div class="message-system">[System] Welcome to Ambit AI</div>
-                <div class="message-system">[System] Click "Start Conversation" to begin</div>
-            </div>
         </div>
     </div>
+
+    <!-- Modals - Moved outside the container to fix stacking context issues -->
+    <div class="voice-settings-panel" id="voiceSettingsPanel">
+        <div class="modal-header">
+            <h4>🎤 Voice Selection</h4>
+            <button class="modal-close-btn" onclick="app.closeAllModals()">✕</button>
+        </div>
+        <div class="voice-options">
+            <div class="preset-voices">
+                <h5>Preset Voices</h5>
+                <div class="voice-grid">
+                    <label class="voice-option">
+                        <input type="radio" name="voicePreset" value="d2dPVWorYGa7CSQb2jt3" checked>
+                        <span class="voice-name">Kyle (Default)</span>
+                        <span class="voice-description">Your natural voice</span>
+                    </label>
+                    <label class="voice-option">
+                        <input type="radio" name="voicePreset" value="YOq2y2Up4RgXP2HyXjE5">
+                        <span class="voice-name">Deep Monster</span>
+                        <span class="voice-description">Dark and intimidating</span>
+                    </label>
+                    <label class="voice-option">
+                        <input type="radio" name="voicePreset" value="yjJ45q8TVCrtMhEKurxY">
+                        <span class="voice-name">Mad Scientist</span>
+                        <span class="voice-description">Eccentric and brilliant</span>
+                    </label>
+                    <label class="voice-option">
+                        <input type="radio" name="voicePreset" value="Sg8zw6Na9OqprPcNwJo1">
+                        <span class="voice-name">Anxious Nerd</span>
+                        <span class="voice-description">Nervous and intelligent</span>
+                    </label>
+                    <label class="voice-option">
+                        <input type="radio" name="voicePreset" value="YXpFCvM1S3JbWEJhoskW">
+                        <span class="voice-name">Cowboy</span>
+                        <span class="voice-description">Rugged and confident</span>
+                    </label>
+                    <label class="voice-option">
+                        <input type="radio" name="voicePreset" value="oR4uRy4fHDUGGISL0Rev">
+                        <span class="voice-name">Old Wizard</span>
+                        <span class="voice-description">Wise and mystical</span>
+                    </label>
+                    <label class="voice-option">
+                        <input type="radio" name="voicePreset" value="KKOYIrvUAjNXYCKUyxhh">
+                        <span class="voice-name">Anon</span>
+                        <span class="voice-description">Anonymous voice</span>
+                    </label>
+                    <label class="voice-option">
+                        <input type="radio" name="voicePreset" value="f2yUVfK5jdm78zlpcZ8C">
+                        <span class="voice-name">Funny Nerd</span>
+                        <span class="voice-description">Quirky and humorous</span>
+                    </label>
+                </div>
+            </div>
+            
+            <div class="custom-voice-section">
+                <h5>Custom Voice ID</h5>
+                <div class="custom-voice-input">
+                    <label class="voice-option custom-option">
+                        <input type="radio" name="voicePreset" value="custom">
+                        <span class="voice-name">Custom Voice</span>
+                    </label>
+                    <input type="text" id="customVoiceId" placeholder="Enter your custom voice ID..." disabled>
+                </div>
+            </div>
+        </div>
+        
+        <div class="voice-settings-actions">
+            <button id="applyVoiceBtn" class="apply-voice-btn">Apply Voice</button>
+            <button id="closeVoiceBtn" class="close-voice-btn">Close</button>
+        </div>
+    </div>
+
+    <div class="advanced-settings" id="advancedSettings">
+        <div class="modal-header">
+            <h4>⚙️ Advanced Configuration</h4>
+            <button class="modal-close-btn" onclick="app.closeAllModals()">✕</button>
+        </div>
+        
+        <div class="settings-section">
+            <h5>API Keys Override</h5>
+            <div class="settings-grid">
+                <div class="setting-item">
+                    <label for="openaiApiKey">OpenAI API Key</label>
+                    <input type="password" id="openaiApiKey" placeholder="sk-...">
+                    <small>Override default OpenAI API key</small>
+                </div>
+                <div class="setting-item">
+                    <label for="elevenlabsApiKey">ElevenLabs API Key</label>
+                    <input type="password" id="elevenlabsApiKey" placeholder="Enter your ElevenLabs API key">
+                    <small>Override default ElevenLabs API key</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="settings-section">
+            <h5>Custom Instructions</h5>
+            <div class="setting-item full-width">
+                <label for="customInstructions">Additional Prompt Instructions</label>
+                <textarea id="customInstructions" rows="4" placeholder="Add your own custom instructions to modify Ambit's behavior...&#10;&#10;Example: 'Always respond in a cheerful tone' or 'Focus on technical details when explaining concepts'"></textarea>
+                <small>These instructions will be added to Ambit's system prompt</small>
+            </div>
+        </div>
+
+        <div class="advanced-actions">
+            <button id="saveAdvancedBtn" class="save-advanced-btn">💾 Save Settings</button>
+            <button id="resetAdvancedBtn" class="reset-advanced-btn">🔄 Reset to Defaults</button>
+        </div>
+        
+        <div class="save-indicator" id="saveIndicator">
+            <span class="save-message">✅ Settings saved successfully!</span>
+        </div>
+    </div>
+
+    <!-- Modal Backdrop -->
+    <div class="modal-backdrop" id="modalBackdrop"></div>
 
     <script>
         class AmbitWebGUI {
@@ -194,7 +201,6 @@
                 this.mediaStream = null;
                 this.audioContext = null;
                 this.processor = null;
-                this.audioBuffer = [];
                 this.silenceCounter = 0;
                 this.speechCounter = 0;
                 this.inSpeech = false;
@@ -224,6 +230,9 @@
                 this.resetConvoBtn = document.getElementById('resetConvoBtn');
                 this.clearLogBtn = document.getElementById('clearLogBtn');
                 this.voiceSettingsBtn = document.getElementById('voiceSettingsBtn');
+                
+                // Modal elements
+                this.modalBackdrop = document.getElementById('modalBackdrop');
                 
                 // Voice settings elements
                 this.voiceSettingsPanel = document.getElementById('voiceSettingsPanel');
@@ -259,9 +268,12 @@
                 this.clearLogBtn.addEventListener('click', () => this.clearLog());
                 this.voiceSettingsBtn.addEventListener('click', () => this.openVoiceSettings());
                 
+                // Modal backdrop - close modals when clicked
+                this.modalBackdrop.addEventListener('click', () => this.closeAllModals());
+                
                 // Voice settings panel
                 this.applyVoiceBtn.addEventListener('click', () => this.applyVoiceSelection());
-                this.closeVoiceBtn.addEventListener('click', () => this.closeVoiceSettings());
+                this.closeVoiceBtn.addEventListener('click', () => this.closeAllModals());
                 
                 // Voice preset radio buttons
                 this.voicePresetRadios.forEach(radio => {
@@ -269,13 +281,18 @@
                 });
                 
                 // Advanced settings toggle
-                this.advancedToggle.addEventListener('click', () => this.toggleAdvancedSettings());
+                this.advancedToggle.addEventListener('click', () => this.openAdvancedSettings());
                 
                 // Advanced settings buttons
                 this.saveAdvancedBtn.addEventListener('click', () => this.saveAdvancedSettings());
                 this.resetAdvancedBtn.addEventListener('click', () => this.resetAdvancedSettings());
                 
-
+                // ESC key to close modals
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape') {
+                        this.closeAllModals();
+                    }
+                });
                 
                 // Message input
                 this.messageInput.addEventListener('keypress', (e) => {
@@ -338,22 +355,9 @@
                 }
             }
 
-            toggleAdvancedSettings() {
-                const isVisible = this.advancedSettings.style.display !== 'none';
-                
-                if (!isVisible) {
-                    // Close all other panels first
-                    this.closeAllSettingsPanels();
-                    
-                    // Open advanced settings
-                    this.advancedSettings.style.display = 'block';
-                    this.advancedToggle.innerHTML = '⚙️ Hide Settings';
-                    this.log('⚙️ Advanced settings opened', 'system');
-                } else {
-                    // Close advanced settings
-                    this.closeAllSettingsPanels();
-                    this.log('⚙️ Advanced settings closed', 'system');
-                }
+            openAdvancedSettings() {
+                this.showModal(this.advancedSettings);
+                this.log('⚙️ Advanced settings opened', 'system');
             }
 
             async startConversation() {
@@ -582,10 +586,6 @@
                 return Math.sqrt(sum / audioData.length);
             }
 
-            updateVisualization(level) {
-                // This function is now deprecated in favor of renderWave
-            }
-
             renderWave() {
                 this.animationFrameId = requestAnimationFrame(() => this.renderWave());
                 if (!this.canvasCtx) return;
@@ -663,25 +663,6 @@
                 }));
             }
 
-            sendAudio() {
-                // Legacy method - now handled by sendAudioStream
-                // Kept for compatibility
-            }
-
-            stopWebRTCAudio() {
-                this.isRecording = false;
-                
-                if (this.mediaStream) {
-                    this.mediaStream.getTracks().forEach(track => track.stop());
-                }
-                if (this.processor) {
-                    this.processor.disconnect();
-                }
-                if (this.audioContext) {
-                    this.audioContext.close();
-                }
-            }
-
             sendMessage() {
                 const message = this.messageInput.value.trim();
                 if (!message || !this.isConnected) return;
@@ -755,18 +736,40 @@
             }
 
             openVoiceSettings() {
-                // Close all other panels first
-                this.closeAllSettingsPanels();
-                
-                // Show the voice settings panel
-                this.voiceSettingsPanel.style.display = 'block';
+                this.showModal(this.voiceSettingsPanel);
                 this.log('🎤 Voice settings opened', 'system');
             }
 
-            closeVoiceSettings() {
-                // Close all settings panels
-                this.closeAllSettingsPanels();
-                this.log('🎤 Voice settings closed', 'system');
+            closeAllModals(silent = false) {
+                // Hide backdrop
+                this.modalBackdrop.classList.remove('show');
+                
+                // Hide all modals
+                const modals = [this.voiceSettingsPanel, this.advancedSettings];
+                modals.forEach(modal => {
+                    modal.classList.remove('show');
+                });
+                
+                // Restore body scroll and remove blur from container
+                document.body.style.overflow = '';
+                document.querySelector('.container').classList.remove('modal-open');
+                
+                if (!silent) {
+                    this.log('Settings closed', 'system');
+                }
+            }
+
+            showModal(modalElement) {
+                // Close any open modals first
+                this.closeAllModals(true);
+                
+                // Show backdrop and modal
+                this.modalBackdrop.classList.add('show');
+                modalElement.classList.add('show');
+                
+                // Prevent body scroll and blur the container
+                document.body.style.overflow = 'hidden';
+                document.querySelector('.container').classList.add('modal-open');
             }
 
             handleVoicePresetChange() {
@@ -811,7 +814,7 @@
                 localStorage.setItem('ambit_voice_name', voiceName);
 
                 // Close the voice settings panel
-                this.closeVoiceSettings();
+                this.closeAllModals();
 
                 this.log(`🎤 Voice changed to: ${voiceName} (ID: ${voiceId})`, 'system');
                 console.log('Voice saved:', { voiceName, voiceId });
@@ -923,13 +926,18 @@
                 return settings;
             }
 
-            closeAllSettingsPanels() {
-                // Close voice settings
-                this.voiceSettingsPanel.style.display = 'none';
+            stopWebRTCAudio() {
+                this.isRecording = false;
                 
-                // Close advanced settings
-                this.advancedSettings.style.display = 'none';
-                this.advancedToggle.innerHTML = '⚙️ Advanced Settings';
+                if (this.mediaStream) {
+                    this.mediaStream.getTracks().forEach(track => track.stop());
+                }
+                if (this.processor) {
+                    this.processor.disconnect();
+                }
+                if (this.audioContext) {
+                    this.audioContext.close();
+                }
             }
         }
 
@@ -937,4 +945,4 @@
         const app = new AmbitWebGUI();
     </script>
 </body>
-</html> 
+</html>
