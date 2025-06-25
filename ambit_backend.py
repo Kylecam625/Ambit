@@ -50,7 +50,7 @@ class AmbitAI:
         # Load configuration from environment variables
         self.openai_model = os.getenv("OPENAI_MODEL", "gpt-4.1")
         self.elevenlabs_model = os.getenv("ELEVENLABS_MODEL", "eleven_flash_v2_5")
-        self.voice_id = os.getenv("ELEVENLABS_VOICE_ID", "d2dPVWorYGa7CSQb2jt3")
+        self.voice_id = os.getenv("ELEVENLABS_VOICE_ID", "1F0HEz1i7DetoXlB32Yy")
         
         # Store the executor for CPU-bound tasks (passed from AmbitServer)
         self.process_executor = process_executor
@@ -199,6 +199,7 @@ class AmbitServer:
         self.vad_model = None
         self.audio_buffer = {}
         self.client_settings = {}  # Store per-client settings
+        self.speaking_clients = set()
         self.setup_vad()
     
     def setup_vad(self):
@@ -257,6 +258,7 @@ class AmbitServer:
             self.clients.discard(websocket)
             if client_id in self.audio_buffer:
                 del self.audio_buffer[client_id]
+            self.speaking_clients.discard(client_id)
 
     async def process_audio_stream(self, websocket, client_id, data):
         """Processes a chunk of the continuous audio stream for VAD."""
@@ -292,6 +294,25 @@ class AmbitServer:
             audio_data_np = np.array(self.audio_buffer[client_id], dtype=np.float32)
             audio_tensor = torch.from_numpy(audio_data_np)
             
+            # --- Interruption Check ---
+            # Perform a sensitive check for any speech activity if Ambit is currently speaking.
+            if client_id in self.speaking_clients:
+                interruption_check = get_speech_timestamps(
+                    audio_tensor, self.vad_model, sampling_rate=sample_rate,
+                    threshold=0.5, # Sensitive threshold
+                    min_speech_duration_ms=80 # Detect short speech segments
+                )
+                if interruption_check:
+                    # Calculate the total duration of all detected speech segments in the buffer.
+                    total_speech_samples = sum(ts['end'] - ts['start'] for ts in interruption_check)
+                    speech_duration_seconds = total_speech_samples / sample_rate
+                    
+                    # Only cancel if speech duration is long enough to be a clear interruption.
+                    if speech_duration_seconds >= 2.0:
+                        print(f"🎤 User has been speaking for {speech_duration_seconds:.2f}s. Sending cancellation signal.")
+                        await websocket.send(json.dumps({'type': 'cancel_audio'}))
+                        self.speaking_clients.discard(client_id)
+
             speech_timestamps = get_speech_timestamps(
                 audio_tensor, self.vad_model, sampling_rate=sample_rate,
                 threshold=0.4, min_speech_duration_ms=250, min_silence_duration_ms=700
@@ -334,7 +355,7 @@ class AmbitServer:
             
             # Generate audio with custom voice if provided
             voice_id = settings.get('voiceId')
-            await self.generate_and_send_audio(websocket, response_text, voice_id)
+            await self.generate_and_send_audio(websocket, response_text, client_id, voice_id)
         except ConnectionClosed:
             print("⚠️ WebSocket closed during conversation turn.")
         except Exception as e:
@@ -342,7 +363,7 @@ class AmbitServer:
             traceback.print_exc()
             await self._send_error(websocket, f"Error processing turn: {e}")
 
-    async def generate_and_send_audio(self, websocket, text, voice_id=None):
+    async def generate_and_send_audio(self, websocket, text, client_id, voice_id=None):
         """Generates TTS audio and sends it to the client."""
         tmp_path = None
         try:
@@ -357,9 +378,11 @@ class AmbitServer:
             audio_base64 = base64.b64encode(audio_data).decode()
             audio_url = f"data:audio/mp3;base64,{audio_base64}"
             await websocket.send(json.dumps({'type': 'audio_ready', 'audioUrl': audio_url}))
+            self.speaking_clients.add(client_id)
             print(f"🔊 Sent TTS audio: {len(audio_data)} bytes")
         except ConnectionClosed:
             print("⚠️ WebSocket closed, skipping TTS generation/sending.")
+            self.speaking_clients.discard(client_id)
         except Exception as e:
             print(f"❌ TTS generation error: {e}")
             await self._send_error(websocket, f'TTS generation failed: {str(e)}')

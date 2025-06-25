@@ -12,6 +12,7 @@ import time
 import pickle
 from typing import Dict, Any
 from deepface import DeepFace
+from .camera_utils import capture_image
 
 # --- Directory Setup ---
 FACES_DIR = "faces"
@@ -21,25 +22,6 @@ if not os.path.exists(FACES_DIR):
     print(f"📁 Created faces directory: {FACES_DIR}")
 
 # --- Helper Functions ---
-
-def _capture_image() -> (Any, str):
-    """
-    Captures an image from the default webcam.
-    Returns the image frame and an error message if something fails.
-    """
-    cap = cv2.VideoCapture(0)
-    if not cap.isOpened():
-        return None, "Sorry, I can't access your camera right now."
-    
-    try:
-        # Allow camera to initialize
-        time.sleep(1)
-        ret, frame = cap.read()
-        if not ret:
-            return None, "Sorry, I couldn't capture an image from your camera."
-        return frame, None
-    finally:
-        cap.release()
 
 def _find_face_match(image_path: str) -> (str, str):
     """
@@ -141,7 +123,7 @@ def identify_user() -> Dict[str, Any]:
     Captures and identifies a user via webcam. This is a BLOCKING, CPU-BOUND function.
     """
     print("[DEBUG] identify_user function called - capturing webcam image...")
-    frame, error = _capture_image()
+    frame, error = capture_image()
     if error:
         print(f"[DEBUG] Camera error: {error}")
         return {"response": error}

@@ -84,9 +84,9 @@
                 <h5>Preset Voices</h5>
                 <div class="voice-grid">
                     <label class="voice-option">
-                        <input type="radio" name="voicePreset" value="d2dPVWorYGa7CSQb2jt3" checked>
-                        <span class="voice-name">Kyle (Default)</span>
-                        <span class="voice-description">Your natural voice</span>
+                        <input type="radio" name="voicePreset" value="1F0HEz1i7DetoXlB32Yy" checked>
+                        <span class="voice-name">AMBIT (Default)</span>
+                        <span class="voice-description">The official voice of Ambit.</span>
                     </label>
                     <label class="voice-option">
                         <input type="radio" name="voicePreset" value="YOq2y2Up4RgXP2HyXjE5">
@@ -99,9 +99,9 @@
                         <span class="voice-description">Eccentric and brilliant</span>
                     </label>
                     <label class="voice-option">
-                        <input type="radio" name="voicePreset" value="Sg8zw6Na9OqprPcNwJo1">
-                        <span class="voice-name">Anxious Nerd</span>
-                        <span class="voice-description">Nervous and intelligent</span>
+                        <input type="radio" name="voicePreset" value="d2dPVWorYGa7CSQb2jt3">
+                        <span class="voice-name">Kyle</span>
+                        <span class="voice-description">The original creator.</span>
                     </label>
                     <label class="voice-option">
                         <input type="radio" name="voicePreset" value="YXpFCvM1S3JbWEJhoskW">
@@ -205,6 +205,7 @@
                 this.speechCounter = 0;
                 this.inSpeech = false;
                 this.vadThreshold = 0.6;
+                this.currentAudio = null;
                 
                 this.animationFrameId = null;
                 this.canvasCtx = null;
@@ -409,7 +410,7 @@
                     
                     // Show active settings
                     const settings = this.getAdvancedSettings();
-                    const voiceName = localStorage.getItem('ambit_voice_name') || 'Kyle (Default)';
+                    const voiceName = localStorage.getItem('ambit_voice_name') || 'AMBIT (Default)';
                     this.log(`🎤 Using voice: ${voiceName}`, 'system');
                     
                     if (settings.customInstructions) {
@@ -696,6 +697,9 @@
                         this.log(`🔊 Playing AI response...`, 'system');
                         this.playAudio(data.audioUrl);
                         break;
+                    case 'cancel_audio':
+                        this.cancelCurrentAudio();
+                        break;
                     case 'error':
                         this.log(`❌ Error: ${data.message}`, 'error');
                         break;
@@ -706,10 +710,37 @@
             }
 
             playAudio(audioUrl) {
+                this.cancelCurrentAudio(); // Ensure any previous audio is stopped
+                
                 const audio = new Audio(audioUrl);
-                audio.play().catch(error => {
-                    this.log(`❌ Audio playback failed: ${error.message}`, 'error');
+                this.currentAudio = audio;
+                
+                audio.play().catch(e => {
+                    console.error("Audio playback failed:", e);
+                    this.log('Could not play audio. Please interact with the page first.', 'error');
+                    if (this.currentAudio === audio) {
+                        this.currentAudio = null;
+                    }
                 });
+
+                audio.onended = () => {
+                    if (this.currentAudio === audio) {
+                        this.currentAudio = null;
+                        this.updateStatus('🎤 Listening... Speak now!', 'connected');
+                        console.log("Audio playback finished.");
+                    }
+                };
+            }
+
+            cancelCurrentAudio() {
+                if (this.currentAudio) {
+                    console.log("Cancelling current audio playback.");
+                    this.log("Playback interrupted by user.", "system");
+                    this.currentAudio.pause();
+                    this.currentAudio.src = ''; // Release the audio resource
+                    this.currentAudio = null;
+                    this.updateStatus('🎤 Listening... Speak now!', 'connected');
+                }
             }
 
             resetConversation() {
