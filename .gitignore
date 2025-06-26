@@ -62,7 +62,6 @@ htmlcov/
 
 # Audio files (for testing)
 *.wav
-*.mp3
 *.m4a
 *.ogg
 
