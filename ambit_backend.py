@@ -68,9 +68,10 @@ class AmbitAI:
         """A helper to add a message to the conversation history."""
         self.conversation_history.append(message)
 
-    async def get_response(self, user_input: str, custom_instructions: str = None) -> str:
+    async def get_response(self, user_input: str, custom_instructions: str = None, voice_id: str = None) -> Dict[str, Any]:
         """
         Gets a complete response from OpenAI, handling the full tool-calling loop.
+        Returns a dictionary describing the action to take.
         """
         self._add_to_history({"role": "user", "content": user_input})
 
@@ -90,12 +91,41 @@ class AmbitAI:
         )
 
         tool_calls = [item for item in response.output if item.type == "function_call"]
+        assistant_response_text = response.output_text
+        
+        # Add the assistant's potential text response to history
+        if assistant_response_text:
+            self._add_to_history({"role": "assistant", "content": assistant_response_text})
+
+        # Handle the special case of playing the favorite song
+        is_playing_song = any(tc.name == 'play_favorite_song' for tc in tool_calls)
+
+        if is_playing_song:
+            # We expect introductory text from the model in this case
+            if not assistant_response_text:
+                assistant_response_text = "Here it is." # Fallback text
+                print("⚠️ Model did not provide intro text for song, using fallback.")
+
+            # Execute the tool to get the song data
+            song_tool_result = await tools_registry.acall_tool('play_favorite_song', {}, executor=self.process_executor)
+            
+            # Add tool call and result to history
+            self._add_to_history(tool_calls[0].model_dump())
+            self._add_to_history({
+                "type": "function_call_output",
+                "call_id": tool_calls[0].call_id,
+                "output": "[Song data was prepared for playback and sent to the user.]",
+            })
+
+            return {
+                "type": "speech_then_song",
+                "speech": assistant_response_text,
+                "song_data": song_tool_result
+            }
 
         if not tool_calls:
             # No tool calls, just return the direct text response
-            assistant_response = response.output_text
-            self._add_to_history({"role": "assistant", "content": assistant_response})
-            return assistant_response
+            return {"type": "speech", "speech": assistant_response_text}
         
         # If we get here, the model decided to use one or more tools
         print(f"🔧 Model decided to call {len(tool_calls)} tool(s).")
@@ -106,6 +136,9 @@ class AmbitAI:
         for tool_call in tool_calls:
             function_name = tool_call.name
             function_args = json.loads(tool_call.arguments)
+
+            if function_name == 'play_favorite_song':
+                function_args['voice_id'] = voice_id or self.voice_id
 
             print(f"  - Executing: {function_name}({json.dumps(function_args)})")
             function_response = await tools_registry.acall_tool(
@@ -128,9 +161,9 @@ class AmbitAI:
             model=self.openai_model, input=messages, tools=tools
         )
 
-        assistant_response = final_response.output_text
-        self._add_to_history({"role": "assistant", "content": assistant_response})
-        return assistant_response
+        final_assistant_response = final_response.output_text
+        self._add_to_history({"role": "assistant", "content": final_assistant_response})
+        return {"type": "speech", "speech": final_assistant_response}
 
     async def get_transcription(self, audio_data: bytes, sample_rate: int) -> str:
         """Transcribes audio using OpenAI Whisper."""
@@ -226,7 +259,9 @@ class AmbitServer:
                     data = json.loads(message)
                     message_type = data.get('type')
 
-                    if message_type == 'configure':
+                    if message_type == 'get_tool_info':
+                        await self.send_tool_info(websocket)
+                    elif message_type == 'configure':
                         # Handle configuration updates
                         self.client_settings[client_id] = {
                             'voiceId': data.get('voiceId'),
@@ -348,14 +383,44 @@ class AmbitServer:
             # Get client settings
             settings = self.client_settings.get(client_id, {})
             custom_instructions = settings.get('customInstructions')
+            voice_id = settings.get('voiceId')
             
             # Get response with custom instructions if provided
-            response_text = await self.ambit.get_response(user_input, custom_instructions)
-            await websocket.send(json.dumps({'type': 'response', 'text': response_text}))
+            response_data = await self.ambit.get_response(user_input, custom_instructions, voice_id)
             
-            # Generate audio with custom voice if provided
-            voice_id = settings.get('voiceId')
-            await self.generate_and_send_audio(websocket, response_text, client_id, voice_id)
+            # Handle different response types
+            if response_data.get("type") == "speech":
+                response_text = response_data.get("speech")
+                if response_text:
+                    await websocket.send(json.dumps({'type': 'response', 'text': response_text}))
+                    await self.generate_and_send_audio(websocket, response_text, client_id, voice_id)
+
+            elif response_data.get("type") == "speech_then_song":
+                # 1. Speak the introductory text
+                intro_text = response_data["speech"]
+                await websocket.send(json.dumps({'type': 'response', 'text': intro_text}))
+                await self.generate_and_send_audio(websocket, intro_text, client_id, voice_id)
+                
+                # Estimate intro duration to avoid overlap.
+                # Average speech is ~150 WPM. Avg word is 5 chars.
+                # (len / 5) / 150 * 60 = len * 0.08
+                intro_duration_s = len(intro_text) * 0.08 + 1.0 # Add 1s buffer
+                await asyncio.sleep(intro_duration_s)
+
+                # 2. Play the song
+                song_tool_result = response_data["song_data"]
+                if "audio_base64" in song_tool_result:
+                    song_base64 = song_tool_result["audio_base64"]
+                    audio_url = f"data:audio/mp3;base64,{song_base64}"
+                    await websocket.send(json.dumps({'type': 'audio_ready', 'audioUrl': audio_url}))
+                    self.speaking_clients.add(client_id)
+                    print(f"🔊 Sent song for playback.")
+                else:
+                    # Handle error from tool if song file wasn't found
+                    error_text = song_tool_result.get("error", "An unknown error occurred while loading the song.")
+                    await websocket.send(json.dumps({'type': 'response', 'text': error_text}))
+                    await self.generate_and_send_audio(websocket, error_text, client_id, voice_id)
+
         except ConnectionClosed:
             print("⚠️ WebSocket closed during conversation turn.")
         except Exception as e:
@@ -389,6 +454,17 @@ class AmbitServer:
         finally:
             if tmp_path and os.path.exists(tmp_path):
                 os.unlink(tmp_path)
+
+    async def send_tool_info(self, websocket):
+        """Sends the available tool schemas to the client."""
+        try:
+            schemas = tools_registry.get_schemas()
+            await websocket.send(json.dumps({
+                'type': 'tool_info',
+                'schemas': schemas
+            }))
+        except Exception as e:
+            await self._send_error(websocket, f'Could not fetch tool info: {e}')
 
     async def _send_error(self, websocket, message):
         """Sends a JSON error message to the client."""

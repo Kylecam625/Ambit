@@ -476,6 +476,13 @@ body {
 .message-error { color: #f85149; }
 
 
+/* Styles for the Info button */
+.corner-btn#infoBtn {
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
 
 /* Clean Modal System */
 .modal-backdrop {
@@ -499,73 +506,165 @@ body {
 
 /* Modal Panels - Shared Styles */
 .voice-settings-panel,
-.advanced-settings {
+.advanced-settings,
+.info-panel {
     position: fixed;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%) scale(0.95);
-    width: 90%;
-    max-width: 600px;
-    max-height: 85vh;
-    overflow-y: auto;
-    padding: 24px;
-    background: rgba(13, 17, 23, 0.95);
-    border: 1px solid rgba(79, 172, 254, 0.3);
-    border-radius: 16px;
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.8);
+    background: linear-gradient(145deg, rgba(22, 27, 34, 0.95) 0%, rgba(13, 17, 23, 1) 100%);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 20px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
     z-index: 1000;
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+    width: 90%;
+    max-width: 680px;
+    max-height: 80vh;
+    overflow-y: auto;
+    padding: 24px;
+}
+
+.voice-settings-panel.show,
+.advanced-settings.show,
+.info-panel.show {
+    opacity: 1;
+    pointer-events: all;
+    transform: translate(-50%, -50%) scale(1);
+}
+
+.container.modal-open {
+    filter: blur(5px) brightness(0.7);
+    transform: scale(0.99);
+    transition: all 0.3s ease;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.modal-header h4 {
+    font-size: 1.5em;
+    font-weight: 700;
+    color: #e6edf3;
+    margin: 0;
+}
+
+.modal-close-btn {
+    background: rgba(255, 255, 255, 0.1);
+    color: #e6edf3;
+    border: none;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    font-size: 20px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    line-height: 1;
+}
+
+.modal-close-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: rotate(90deg);
+}
+
+/* Info Panel Specifics */
+.info-content {
+    padding: 0 16px;
+}
+
+.info-content h2 {
+    text-align: center;
+    font-size: 2em;
+    font-weight: 700;
+    background: linear-gradient(135deg, #79c0ff 0%, #58a6ff 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 12px;
+}
+
+.info-content > p {
+    text-align: center;
+    color: #8b949e;
+    font-size: 1.1em;
+    margin-bottom: 32px;
+}
+
+.info-section {
+    background: rgba(33, 38, 45, 0.5);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.info-section h3 {
+    font-size: 1.3em;
+    font-weight: 600;
+    color: #e6edf3;
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.info-section ul {
+    list-style: none;
+    padding-left: 0;
+}
+
+.info-section li {
+    color: #c9d1d9;
+    margin-bottom: 12px;
+    line-height: 1.6;
+}
+
+.info-section li strong {
+    color: #79c0ff;
+    font-weight: 600;
+}
+
+.info-section li em {
+    font-style: italic;
+    color: #a5d6ff;
+    background: rgba(31, 111, 235, 0.1);
+    padding: 2px 6px;
+    border-radius: 6px;
+}
+
+.info-section ul ul {
+    margin-top: 10px;
+    padding-left: 20px;
+}
+
+.info-section ul ul li {
+    margin-bottom: 8px;
+}
+
+/* Voice Settings Panel */
+.voice-settings-panel h5 {
+    margin-bottom: 15px;
+    font-size: 1.2em;
+    padding: 20px 24px;
+    margin-top: 10px;
 }
 
 .voice-settings-panel.show,
 .advanced-settings.show {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
     pointer-events: all;
-}
-
-.container.modal-open {
-    filter: blur(5px);
-    transform: scale(0.98);
-    transition: filter 0.3s ease-in-out, transform 0.3s ease-in-out;
-}
-
-/* Modal Headers */
-.modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 20px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.modal-header h4 {
-    margin: 0;
-    font-size: 18px;
-    font-weight: 700;
-    color: #e6edf3;
-}
-
-.modal-close-btn {
-    background: #da3633;
-    color: white;
-    border: none;
-    width: 28px;
-    height: 28px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: bold;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.modal-close-btn:hover {
-    background: #f85149;
+    transform: translate(-50%, -50%) scale(1);
 }
 
 /* Voice Settings Specific */

@@ -13,6 +13,9 @@
             <button class="corner-btn top-left" id="voiceSettingsBtn">
                 🎤 Voice
             </button>
+            <button class="corner-btn" id="infoBtn">
+                ℹ️ Info
+            </button>
             <button class="corner-btn top-right" id="advancedToggle">
                 ⚙️ Settings
             </button>
@@ -185,6 +188,59 @@
         </div>
     </div>
 
+    <!-- Info Panel Modal -->
+    <div class="info-panel" id="infoPanel">
+        <div class="modal-header">
+            <h4>❓ Quick Guide</h4>
+            <button class="modal-close-btn" onclick="app.closeAllModals()">✕</button>
+        </div>
+        <div class="info-content">
+            <h2>Welcome to Ambit AI</h2>
+            <p>This guide explains the main features and how to use them.</p>
+
+            <div class="info-section">
+                <h3>🚀 Core Conversation</h3>
+                <ul>
+                    <li><strong>Start/Stop:</strong> Use the main "Start Conversation" button to begin or end your session.</li>
+                    <li><strong>Voice Input:</strong> When a conversation is active, the AI is listening. Simply speak, and it will automatically detect your speech.</li>
+                    <li><strong>Text Input:</strong> You can type messages in the input box at any time during a conversation.</li>
+                    <li><strong>Interruption:</strong> You can interrupt Ambit while it's speaking by simply starting to talk.</li>
+                </ul>
+            </div>
+
+            <div class="info-section">
+                <h3>🛠️ Settings & Customization</h3>
+                <ul>
+                    <li><strong>🎤 Voice Settings:</strong> Click the "Voice" button to choose from preset voices or provide a custom ElevenLabs Voice ID for a unique experience.</li>
+                    <li><strong>⚙️ Advanced Settings:</strong> Click the "Settings" button to:
+                        <ul>
+                            <li>Override default API keys for OpenAI and ElevenLabs.</li>
+                            <li>Provide custom instructions to modify Ambit's behavior for the session.</li>
+                        </ul>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="info-section">
+                <h3>🤖 Special Functions (Tool Calling)</h3>
+                <p>You can trigger special functions by asking certain questions:</p>
+                <ul>
+                    <li><strong>Facial Recognition:</strong> Ask <em>"Who am I?"</em> or <em>"Do you recognize me?"</em> Ambit will use your webcam to identify you. If you're a new user, it will ask for your name and remember you.</li>
+                    <li><strong>Vision Analysis:</strong> Ask Ambit to look at something, e.g., <em>"What do you think of this?"</em> or <em>"Can you see this?"</em> It will capture an image from your webcam and describe what it sees.</li>
+                    <li><strong>Play Favorite Song:</strong> Ask <em>"What's your favorite song?"</em> Ambit will give a short intro and then play its favorite track.</li>
+                </ul>
+            </div>
+
+             <div class="info-section">
+                <h3>🔄 Other Controls</h3>
+                <ul>
+                    <li><strong>Reset Conversation:</strong> Clears the AI's short-term memory of the current conversation but keeps the visual log on screen.</li>
+                    <li><strong>Clear Log:</strong> Wipes the conversation log from the screen.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal Backdrop -->
     <div class="modal-backdrop" id="modalBackdrop"></div>
 
@@ -231,6 +287,7 @@
                 this.resetConvoBtn = document.getElementById('resetConvoBtn');
                 this.clearLogBtn = document.getElementById('clearLogBtn');
                 this.voiceSettingsBtn = document.getElementById('voiceSettingsBtn');
+                this.infoBtn = document.getElementById('infoBtn');
                 
                 // Modal elements
                 this.modalBackdrop = document.getElementById('modalBackdrop');
@@ -241,6 +298,7 @@
                 this.customVoiceInput = document.getElementById('customVoiceId');
                 this.applyVoiceBtn = document.getElementById('applyVoiceBtn');
                 this.closeVoiceBtn = document.getElementById('closeVoiceBtn');
+                this.infoPanel = document.getElementById('infoPanel');
                 
                 // Settings elements
                 this.advancedToggle = document.getElementById('advancedToggle');
@@ -268,6 +326,7 @@
                 this.resetConvoBtn.addEventListener('click', () => this.resetConversation());
                 this.clearLogBtn.addEventListener('click', () => this.clearLog());
                 this.voiceSettingsBtn.addEventListener('click', () => this.openVoiceSettings());
+                this.infoBtn.addEventListener('click', () => this.openInfoPanel());
                 
                 // Modal backdrop - close modals when clicked
                 this.modalBackdrop.addEventListener('click', () => this.closeAllModals());
@@ -776,7 +835,7 @@
                 this.modalBackdrop.classList.remove('show');
                 
                 // Hide all modals
-                const modals = [this.voiceSettingsPanel, this.advancedSettings];
+                const modals = [this.voiceSettingsPanel, this.advancedSettings, this.infoPanel];
                 modals.forEach(modal => {
                     modal.classList.remove('show');
                 });
@@ -969,6 +1028,11 @@
                 if (this.audioContext) {
                     this.audioContext.close();
                 }
+            }
+
+            openInfoPanel() {
+                this.showModal(this.infoPanel);
+                this.log('❓ Info panel opened', 'system');
             }
         }
 

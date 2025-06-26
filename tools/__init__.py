@@ -6,10 +6,12 @@ This directory will contain all the function calling tools that Ambit can use.
 # Import and register available tools
 from .facial_recognition import register_facial_recognition_tools
 from .vision import register_vision_tools
+from .audio import register_audio_tools
 
 # Register all tools
 register_facial_recognition_tools()
 register_vision_tools()
+register_audio_tools()
 
 # Future tool imports will go here
 # from .web_search import web_search_tool
