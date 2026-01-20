@@ -35,6 +35,9 @@ const normalize_profile_row = (row) => {
     name: to_string(row.name).trim() || "Unknown",
     age: row.age === null || row.age === undefined ? null : to_int_or_null(row.age),
     interests: to_string(row.interests).trim(),
+    phone_number: to_string(row.phone_number).trim() || null,
+    sms_consent: Boolean(row.sms_consent),
+    sms_consent_at: to_string(row.sms_consent_at).trim() || null,
     created_at: to_string(row.created_at).trim(),
     updated_at: to_string(row.updated_at).trim(),
   };
@@ -137,8 +140,43 @@ const merge_memory = ({ current, patch }) => {
 const create_repo = ({ db }) => {
   const insert_profile = db.prepare(
     `
-    INSERT INTO profiles (profile_id, name, age, interests, created_at, updated_at)
-    VALUES (@profile_id, @name, @age, @interests, @created_at, @updated_at)
+    INSERT INTO profiles (
+      profile_id,
+      name,
+      age,
+      interests,
+      phone_number,
+      sms_consent,
+      sms_consent_at,
+      created_at,
+      updated_at
+    )
+    VALUES (
+      @profile_id,
+      @name,
+      @age,
+      @interests,
+      @phone_number,
+      @sms_consent,
+      @sms_consent_at,
+      @created_at,
+      @updated_at
+    )
+  `
+  );
+
+  const update_profile = db.prepare(
+    `
+    UPDATE profiles
+    SET
+      name = @name,
+      age = @age,
+      interests = @interests,
+      phone_number = @phone_number,
+      sms_consent = @sms_consent,
+      sms_consent_at = @sms_consent_at,
+      updated_at = @updated_at
+    WHERE profile_id = @profile_id
   `
   );
 
@@ -151,6 +189,9 @@ const create_repo = ({ db }) => {
       p.name,
       p.age,
       p.interests,
+      p.phone_number,
+      p.sms_consent,
+      p.sms_consent_at,
       p.created_at,
       p.updated_at,
       (SELECT COUNT(1) FROM enrollments e WHERE e.profile_id = p.profile_id) AS descriptor_count
@@ -262,15 +303,27 @@ const create_repo = ({ db }) => {
       return { profile, enrollments, memory, conversation_summaries: summaries };
     },
 
-    create_profile({ name, age, interests }) {
+    create_profile({ name, age, interests, phone_number = null, sms_consent = false }) {
       const profile_id = uuid();
       const created_at = now_iso();
+      const normalized_phone = to_string(phone_number).trim() || null;
+      const did_consent = Boolean(sms_consent);
+
+      if (normalized_phone && !did_consent) {
+        throw new Error("sms_consent is required when providing a phone_number");
+      }
+      if (did_consent && !normalized_phone) {
+        throw new Error("phone_number is required when sms_consent is true");
+      }
 
       insert_profile.run({
         profile_id,
         name: to_string(name).trim() || "Unknown",
         age: to_int_or_null(age),
         interests: to_string(interests).trim(),
+        phone_number: normalized_phone,
+        sms_consent: did_consent ? 1 : 0,
+        sms_consent_at: did_consent ? created_at : null,
         created_at,
         updated_at: created_at,
       });
@@ -283,6 +336,66 @@ const create_repo = ({ db }) => {
       });
 
       return this.get_profile({ profile_id });
+    },
+
+    update_profile({ profile_id, name, age, interests, phone_number, sms_consent }) {
+      const normalized_profile_id = to_string(profile_id).trim();
+      if (!normalized_profile_id) {
+        throw new Error("profile_id is required");
+      }
+
+      return tx(() => {
+        const current_row = get_profile.get(normalized_profile_id);
+        const current = normalize_profile_row(current_row);
+        if (!current) {
+          throw new Error("Profile not found");
+        }
+
+        const has_name = name !== undefined;
+        const has_age = age !== undefined;
+        const has_interests = interests !== undefined;
+        const has_phone_number = phone_number !== undefined;
+        const has_sms_consent = sms_consent !== undefined;
+
+        const next_name = has_name ? to_string(name).trim() : current.name;
+        if (has_name && !next_name) {
+          throw new Error("name is required");
+        }
+
+        const next_age = has_age ? to_int_or_null(age) : current.age;
+        const next_interests = has_interests ? to_string(interests).trim() : current.interests;
+        const next_phone_number = has_phone_number
+          ? to_string(phone_number).trim() || null
+          : current.phone_number;
+        const next_sms_consent = has_sms_consent ? Boolean(sms_consent) : current.sms_consent;
+
+        if (next_phone_number && !next_sms_consent) {
+          throw new Error("sms_consent is required when providing a phone_number");
+        }
+        if (next_sms_consent && !next_phone_number) {
+          throw new Error("phone_number is required when sms_consent is true");
+        }
+
+        const updated_at = now_iso();
+        const next_sms_consent_at = !next_sms_consent
+          ? null
+          : !current.sms_consent && next_sms_consent
+            ? updated_at
+            : current.sms_consent_at;
+
+        update_profile.run({
+          profile_id: normalized_profile_id,
+          name: next_name || "Unknown",
+          age: next_age,
+          interests: next_interests,
+          phone_number: next_phone_number,
+          sms_consent: next_sms_consent ? 1 : 0,
+          sms_consent_at: next_sms_consent_at,
+          updated_at,
+        });
+
+        return this.get_profile({ profile_id: normalized_profile_id });
+      });
     },
 
     delete_profile({ profile_id }) {

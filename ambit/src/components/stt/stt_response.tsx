@@ -1,3 +1,5 @@
+import { strip_elevenlabs_v3_audio_tags } from "@/lib/elevenlabs/elevenlabs_audio_tags";
+
 export const SttResponse = ({
   error_message,
   is_responding,
@@ -7,9 +9,10 @@ export const SttResponse = ({
   is_responding: boolean;
   response: string;
 }) => {
+  const display_response = strip_elevenlabs_v3_audio_tags(response);
   const message = is_responding
     ? "Thinking..."
-    : response || "No response yet. Ask a question to get a reply.";
+    : display_response || "No response yet. Ask a question to get a reply.";
 
   return (
     <section className="flex w-full flex-col gap-3 rounded-2xl border border-zinc-800 bg-zinc-900 p-6 shadow-sm">

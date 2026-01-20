@@ -5,10 +5,12 @@ import { MouthTopBar } from "@/components/mouth/mouth_top_bar";
 import { MouthTranscriptBar } from "@/components/mouth/mouth_transcript_bar";
 import { MouthWaves } from "@/components/mouth/mouth_waves";
 import { useRealtimeStt } from "@/hooks/use_realtime_stt";
-import { capture_frame_data_url } from "@/lib/identity/camera_browser";
+import { capture_frame_data_url_async } from "@/lib/identity/camera_browser";
 import { useIdentityRuntime } from "@/lib/identity/use_identity_runtime";
 import type { AgentState } from "@/components/ui/bar_visualizer";
 import { useWindowSize } from "@/lib/ui/use_window_size";
+import { GeneratedImageOverlay } from "@/components/ui/generated_image_overlay";
+import { ImageTaskToast } from "@/components/ui/image_task_toast";
 
 export const MouthScreen = () => {
   const [active_profile_id, set_active_profile_id] = useState<string | null>(null);
@@ -51,23 +53,22 @@ export const MouthScreen = () => {
     stop_realtime,
     transcript,
     response_text,
-    reset_transcript,
+    ui_events,
     reset_conversation,
+    cancel_inflight,
     tts_audio_element,
   } = useRealtimeStt({
     profile_id: active_profile_id,
     capture_camera_frame: async () => {
       const video_el = identity_video_ref.current;
       if (!video_el) return null;
-      return (
-        capture_frame_data_url({
-          video_el,
-          max_size: 512,
-          mime: "image/jpeg",
-          quality: 0.85,
-          mirror: true,
-        }) ?? null
-      );
+      return await capture_frame_data_url_async({
+        video_el,
+        max_size: 512,
+        mime: "image/jpeg",
+        quality: 0.85,
+        mirror: true,
+      });
     },
   });
 
@@ -77,9 +78,9 @@ export const MouthScreen = () => {
     const prev = last_profile_id_ref.current;
     const next = active_profile_id;
     if (prev === next) return;
-    reset_transcript();
+    cancel_inflight();
     last_profile_id_ref.current = next;
-  }, [active_profile_id, reset_transcript]);
+  }, [active_profile_id, cancel_inflight]);
 
   useEffect(() => {
     if (active_profile_id !== null) return;
@@ -103,18 +104,36 @@ export const MouthScreen = () => {
         ? "listening"
         : "initializing";
 
-  const recognized_label = (() => {
+  const recognized_name = (() => {
     const id = identity.recognized_profile_id;
     if (!id) return "Anonymous";
     const match = identity.profiles.find((p) => p.profile_id === id);
     return match ? match.name : "Anonymous";
   })();
+
+  const { identity_label, identity_tone } = (() => {
+    if (identity.models_error)
+      return { identity_label: identity.models_error, identity_tone: "bad" as const };
+    if (identity.connection_error)
+      return { identity_label: "Svc off", identity_tone: "warn" as const };
+    if (!identity.is_models_loaded) return { identity_label: "Loading", identity_tone: "warn" as const };
+    if (!identity.is_camera_running) return { identity_label: "Off", identity_tone: "warn" as const };
+    if (identity.recognized_profile_id)
+      return { identity_label: recognized_name, identity_tone: "ok" as const };
+    if (identity.is_detected) return { identity_label: "Unknown", identity_tone: "warn" as const };
+    return { identity_label: "No face", identity_tone: "warn" as const };
+  })();
+
+  const identity_error_message =
+    identity.profile_action_error ?? identity.connection_error ?? identity.models_error;
   void response_text;
   void stop_realtime;
   void start_realtime;
 
   return (
     <div className="h-[100dvh] w-[100dvw] overflow-hidden bg-black text-zinc-100 select-none touch-manipulation">
+      <GeneratedImageOverlay ui_events={ui_events} />
+      <ImageTaskToast ui_events={ui_events} />
       <main className="mx-auto flex h-full w-full max-w-[980px] flex-col gap-[clamp(10px,2.2vw,16px)] px-[clamp(10px,2.6vw,18px)] py-[clamp(10px,2.6vw,18px)]">
         <div className="shrink-0">
           <MouthTopBar
@@ -133,15 +152,19 @@ export const MouthScreen = () => {
             // Identity
             profiles={identity.profiles}
             recognized_profile_id={identity.recognized_profile_id}
-            recognized_label={recognized_label}
+            recognized_label={recognized_name}
+            identity_pill_value={identity_label}
+            identity_pill_tone={identity_tone}
             is_identity_camera_running={identity.is_camera_running}
             is_identity_models_loaded={identity.is_models_loaded}
             is_identity_busy={identity.is_profile_action_running}
-            identity_error_message={identity.profile_action_error}
+            identity_error_message={identity_error_message}
             on_identity_refresh={() => void identity.refresh_profiles()}
             on_identity_delete_profile={(args) => void identity.delete_profile(args)}
             on_identity_create_profile={(args) => void identity.create_profile(args)}
+            on_identity_update_profile={(args) => void identity.update_profile(args)}
             on_identity_capture_enrollment={identity.capture_profile_enrollment}
+            on_identity_add_profile_enrollment={(args) => void identity.add_profile_enrollment(args)}
             on_identity_view_memory={identity.view_profile_memory}
             on_identity_view_generated_images={identity.view_profile_generated_images}
             on_identity_delete_memory_item={identity.delete_profile_memory_item}

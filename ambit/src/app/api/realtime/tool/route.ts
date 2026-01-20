@@ -17,6 +17,7 @@ type request_body = {
   tool_name?: string;
   call_id?: string;
   image_data_url?: string;
+  tool_output?: string;
   tool_arguments?: unknown;
   previous_response_id?: string | null;
   conversation_id?: string | null;
@@ -46,6 +47,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   const tool_name = to_string(body?.tool_name);
   const call_id = to_string(body?.call_id);
   const image_data_url = to_string(body?.image_data_url);
+  const tool_output = to_string(body?.tool_output);
   const previous_response_id =
     typeof body?.previous_response_id === "string" ? body.previous_response_id.trim() : null;
   const conversation_id =
@@ -76,8 +78,11 @@ export async function POST(request: NextRequest): Promise<Response> {
     });
   }
 
-  if (!image_data_url) {
-    return new Response(JSON.stringify({ error: "image_data_url is required" }), {
+  const has_image = Boolean(image_data_url);
+  const has_tool_output = Boolean(tool_output);
+
+  if (!has_image && !has_tool_output) {
+    return new Response(JSON.stringify({ error: "image_data_url or tool_output is required" }), {
       status: 400,
       headers: { "Content-Type": "application/json" },
     });
@@ -112,12 +117,14 @@ export async function POST(request: NextRequest): Promise<Response> {
       }
     }
 
-    const vision_text = await analyze_camera_frame({
-      openai,
-      question: tool_question,
-      focus: tool_focus,
-      image_data_url,
-    });
+    const vision_text = has_tool_output
+      ? tool_output
+      : await analyze_camera_frame({
+          openai,
+          question: tool_question,
+          focus: tool_focus,
+          image_data_url,
+        });
 
     const result = await continue_openai_response_with_tool_output({
       openai,

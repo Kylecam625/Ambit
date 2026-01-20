@@ -20,16 +20,78 @@ const create_profiles_router = ({ repo }) => {
           .split(",")
           .map((s) => s.trim())
       ).join(", ");
+      const phone_number_raw = to_string(req.body?.phone_number).trim();
+      const phone_number = phone_number_raw ? phone_number_raw : null;
+      const sms_consent_raw = req.body?.sms_consent;
+      const sms_consent =
+        sms_consent_raw === true ||
+        sms_consent_raw === 1 ||
+        sms_consent_raw === "1" ||
+        String(sms_consent_raw || "").trim().toLowerCase() === "true";
 
       if (!name) {
         res.status(400).json({ error: "name is required" });
         return;
       }
 
-      const created = repo.create_profile({ name, age, interests });
+      if (phone_number && !sms_consent) {
+        res.status(400).json({ error: "sms_consent is required when providing a phone_number" });
+        return;
+      }
+      if (sms_consent && !phone_number) {
+        res.status(400).json({ error: "phone_number is required when sms_consent is true" });
+        return;
+      }
+
+      const created = repo.create_profile({ name, age, interests, phone_number, sms_consent });
       res.json({ profile: created.profile });
     } catch (error) {
       res.status(500).json({ error: as_error_message(error) });
+    }
+  });
+
+  router.patch("/profiles/:profile_id", (req, res) => {
+    try {
+      const profile_id = to_string(req.params.profile_id).trim();
+      if (!profile_id) {
+        res.status(400).json({ error: "profile_id is required" });
+        return;
+      }
+
+      const body = is_record(req.body) ? req.body : {};
+      const has = (key) => Object.prototype.hasOwnProperty.call(body, key);
+
+      const name = has("name") ? to_string(body.name).trim() : undefined;
+      const age = has("age") ? to_int_or_null(body.age) : undefined;
+      const interests = has("interests")
+        ? uniq_strings(
+            to_string(body.interests)
+              .split(",")
+              .map((s) => s.trim())
+          ).join(", ")
+        : undefined;
+
+      const phone_number_raw = has("phone_number") ? to_string(body.phone_number).trim() : undefined;
+      const phone_number =
+        phone_number_raw === undefined ? undefined : phone_number_raw ? phone_number_raw : null;
+
+      const sms_consent = (() => {
+        if (!has("sms_consent")) return undefined;
+        const raw = body.sms_consent;
+        return (
+          raw === true ||
+          raw === 1 ||
+          raw === "1" ||
+          String(raw || "").trim().toLowerCase() === "true"
+        );
+      })();
+
+      const updated = repo.update_profile({ profile_id, name, age, interests, phone_number, sms_consent });
+      res.json({ profile: updated.profile });
+    } catch (error) {
+      const message = as_error_message(error);
+      const status = message.toLowerCase().includes("not found") ? 404 : 400;
+      res.status(status).json({ error: message });
     }
   });
 

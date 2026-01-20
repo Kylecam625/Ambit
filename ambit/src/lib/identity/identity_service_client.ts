@@ -85,17 +85,50 @@ export const identity_create_profile = async ({
   name,
   age,
   interests,
+  phone_number = null,
+  sms_consent = false,
 }: {
   base_url: string;
   name: string;
   age: number | null;
   interests: string;
+  phone_number?: string | null;
+  sms_consent?: boolean;
 }): Promise<identity_profile> => {
   const url = api_url({ base_url, path: "/api/profiles" });
   const data = await fetch_json<{ profile: identity_profile }>({
     url,
     method: "POST",
-    body: { name, age, interests },
+    body: { name, age, interests, phone_number, sms_consent },
+  });
+  return data.profile;
+};
+
+export const identity_patch_profile = async ({
+  base_url,
+  profile_id,
+  name,
+  age,
+  interests,
+  phone_number,
+  sms_consent,
+}: {
+  base_url: string;
+  profile_id: string;
+  name: string;
+  age: number | null;
+  interests: string;
+  phone_number: string | null;
+  sms_consent: boolean;
+}): Promise<identity_profile> => {
+  const url = api_url({
+    base_url,
+    path: `/api/profiles/${encodeURIComponent(profile_id)}`,
+  });
+  const data = await fetch_json<{ profile: identity_profile }>({
+    url,
+    method: "PATCH",
+    body: { name, age, interests, phone_number, sms_consent },
   });
   return data.profile;
 };

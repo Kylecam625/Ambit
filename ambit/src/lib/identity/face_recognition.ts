@@ -52,7 +52,7 @@ export const build_face_matcher = async ({
   distance_threshold: number;
 }) => {
   const faceapi = (await ensure_faceapi()) as faceapi_runtime;
-  const threshold = clamp(distance_threshold || 0.45, 0.3, 0.9);
+  const threshold = clamp(distance_threshold || 0.6, 0.3, 0.9);
 
   const labeled = profiles
     .map((profile) => {
@@ -74,7 +74,7 @@ export const build_face_matcher = async ({
 export const detect_single_face_descriptor = async ({
   video_el,
   input_size = 224,
-  score_threshold = 0.5,
+  score_threshold = 0.4,
 }: {
   video_el: HTMLVideoElement;
   input_size?: number;

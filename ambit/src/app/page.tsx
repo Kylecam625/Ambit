@@ -4,13 +4,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { MouthTopBar } from "@/components/mouth/mouth_top_bar";
 import { MouthTranscriptBar } from "@/components/mouth/mouth_transcript_bar";
 import { MouthWaves } from "@/components/mouth/mouth_waves";
-import { SttVisualizer } from "@/components/stt/stt_visualizer";
-import { FullscreenButton } from "@/components/ui/fullscreen_button";
-import { SettingsPanel } from "@/components/ui/settings_panel";
 import { useRealtimeStt } from "@/hooks/use_realtime_stt";
 import { useIdentityRuntime } from "@/lib/identity/use_identity_runtime";
-import { capture_frame_data_url } from "@/lib/identity/camera_browser";
+import { capture_frame_data_url_async } from "@/lib/identity/camera_browser";
+import { strip_elevenlabs_v3_audio_tags } from "@/lib/elevenlabs/elevenlabs_audio_tags";
 import { useIsFullscreen } from "@/lib/ui/use_is_fullscreen";
+import { GeneratedImageOverlay } from "@/components/ui/generated_image_overlay";
+import { ImageTaskToast } from "@/components/ui/image_task_toast";
 
 export default function Home() {
   // Start in base knowledge (anonymous) on every launch.
@@ -19,8 +19,6 @@ export default function Home() {
     useState(false);
 
   const identity_video_ref = useRef<HTMLVideoElement | null>(null);
-  const image_timer_ref = useRef<number | null>(null);
-  const [ephemeral_image_data_url, set_ephemeral_image_data_url] = useState<string | null>(null);
 
   const {
     is_connected,
@@ -32,7 +30,7 @@ export default function Home() {
     load_mics,
     load_voices,
     mic_devices,
-    reset_transcript,
+    cancel_inflight,
     reset_conversation,
     transcript,
     response_text,
@@ -51,15 +49,13 @@ export default function Home() {
     capture_camera_frame: async () => {
       const video_el = identity_video_ref.current;
       if (!video_el) return null;
-      return (
-        capture_frame_data_url({
-          video_el,
-          max_size: 512,
-          mime: "image/jpeg",
-          quality: 0.85,
-          mirror: true,
-        }) ?? null
-      );
+      return await capture_frame_data_url_async({
+        video_el,
+        max_size: 512,
+        mime: "image/jpeg",
+        quality: 0.85,
+        mirror: true,
+      });
     },
   });
 
@@ -70,9 +66,9 @@ export default function Home() {
     const prev = last_profile_id_ref.current;
     const next = active_profile_id;
     if (prev === next) return;
-    reset_transcript();
+    cancel_inflight();
     last_profile_id_ref.current = next;
-  }, [active_profile_id, reset_transcript]);
+  }, [active_profile_id, cancel_inflight]);
 
   const handle_identity_expired = useCallback(() => {
     console.log("[Page] Identity expired, switching to anonymous mode");
@@ -108,44 +104,6 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const is_active = is_connected || is_speaking || is_responding;
-
-  useEffect(() => {
-    const event = ui_events.find((e) => e.type === "display_image") ?? null;
-    const image_data_url =
-      event && typeof event["image_data_url"] === "string" ? String(event["image_data_url"]) : "";
-    if (!image_data_url) return;
-
-    const display_ms_raw = event ? event["display_ms"] : null;
-    const display_ms =
-      typeof display_ms_raw === "number" && Number.isFinite(display_ms_raw)
-        ? Math.max(0, Math.floor(display_ms_raw))
-        : 5000;
-
-    if (image_timer_ref.current) {
-      window.clearTimeout(image_timer_ref.current);
-      image_timer_ref.current = null;
-    }
-
-    set_ephemeral_image_data_url(image_data_url);
-    image_timer_ref.current = window.setTimeout(() => {
-      set_ephemeral_image_data_url(null);
-      image_timer_ref.current = null;
-    }, display_ms);
-
-    return () => {
-      if (image_timer_ref.current) {
-        window.clearTimeout(image_timer_ref.current);
-        image_timer_ref.current = null;
-      }
-    };
-  }, [ui_events]);
-
-  useEffect(() => {
-    if (!is_speaking) return;
-    set_ephemeral_image_data_url(null);
-  }, [is_speaking]);
-
   const is_fullscreen = useIsFullscreen();
 
   const identity = useIdentityRuntime({
@@ -161,6 +119,7 @@ export default function Home() {
     const recognized = identity.recognized_profile_id;
     if (!recognized) return;
     if (active_profile_id === recognized) return;
+    console.log(`[Page Safety Net] Syncing active_profile_id: ${active_profile_id} → ${recognized}`);
     set_active_profile_id(recognized);
   }, [active_profile_id, identity.recognized_profile_id]);
 
@@ -171,24 +130,21 @@ export default function Home() {
     return match ? match.name : id;
   })();
 
-  const { identity_label, identity_kind } = (() => {
-    if (identity.models_error) {
-      return { identity_label: "Error", identity_kind: "bad" as const };
-    }
-    if (!identity.is_models_loaded) {
-      return { identity_label: "Loading", identity_kind: "warn" as const };
-    }
-    if (!identity.is_camera_running) {
-      return { identity_label: "Off", identity_kind: "warn" as const };
-    }
-    if (identity.recognized_profile_id) {
-      return { identity_label: recognized_label, identity_kind: "ok" as const };
-    }
-    if (identity.is_detected) {
-      return { identity_label: "Unknown", identity_kind: "warn" as const };
-    }
-    return { identity_label: "No face", identity_kind: "warn" as const };
+  const { identity_label, identity_tone } = (() => {
+    if (identity.models_error)
+      return { identity_label: identity.models_error, identity_tone: "bad" as const };
+    if (identity.connection_error)
+      return { identity_label: "Svc off", identity_tone: "warn" as const };
+    if (!identity.is_models_loaded) return { identity_label: "Loading", identity_tone: "warn" as const };
+    if (!identity.is_camera_running) return { identity_label: "Off", identity_tone: "warn" as const };
+    if (identity.recognized_profile_id)
+      return { identity_label: recognized_label, identity_tone: "ok" as const };
+    if (identity.is_detected) return { identity_label: "Unknown", identity_tone: "warn" as const };
+    return { identity_label: "No face", identity_tone: "warn" as const };
   })();
+
+  const identity_error_message =
+    identity.profile_action_error ?? identity.connection_error ?? identity.models_error;
 
   const state =
     is_responding
@@ -199,34 +155,14 @@ export default function Home() {
           ? "listening"
           : "initializing";
 
+  const display_response_text = strip_elevenlabs_v3_audio_tags(response_text);
+
   return (
     <div
       className={`${is_fullscreen ? "h-[100dvh] w-[100dvw] overflow-hidden" : "min-h-screen"} bg-zinc-950 text-zinc-100`}
     >
-      {/* Ephemeral generated image display */}
-      {ephemeral_image_data_url ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 p-6">
-          <button
-            className="absolute inset-0 cursor-default"
-            type="button"
-            aria-label="Close image"
-            onClick={() => set_ephemeral_image_data_url(null)}
-          />
-          <div className="relative w-full max-w-2xl">
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-3 shadow-2xl">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={ephemeral_image_data_url}
-                alt="Generated"
-                className="h-auto w-full rounded-xl object-contain"
-              />
-              <p className="mt-2 text-center text-xs text-zinc-400">
-                Saved to profile (if recognized)
-              </p>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <GeneratedImageOverlay ui_events={ui_events} />
+      <ImageTaskToast ui_events={ui_events} />
 
       {is_fullscreen ? (
         <main className="mx-auto flex h-full w-full max-w-[980px] flex-col gap-[clamp(10px,2.2vw,16px)] px-[clamp(10px,2.6vw,18px)] py-[clamp(10px,2.6vw,18px)]">
@@ -248,14 +184,18 @@ export default function Home() {
               profiles={identity.profiles}
               recognized_profile_id={identity.recognized_profile_id}
               recognized_label={recognized_label}
+              identity_pill_value={identity_label}
+              identity_pill_tone={identity_tone}
               is_identity_camera_running={identity.is_camera_running}
               is_identity_models_loaded={identity.is_models_loaded}
               is_identity_busy={identity.is_profile_action_running}
-              identity_error_message={identity.profile_action_error}
+              identity_error_message={identity_error_message}
               on_identity_refresh={() => void identity.refresh_profiles()}
               on_identity_delete_profile={(args) => void identity.delete_profile(args)}
               on_identity_create_profile={(args) => void identity.create_profile(args)}
+              on_identity_update_profile={(args) => void identity.update_profile(args)}
               on_identity_capture_enrollment={identity.capture_profile_enrollment}
+              on_identity_add_profile_enrollment={(args) => void identity.add_profile_enrollment(args)}
               on_identity_view_memory={identity.view_profile_memory}
               on_identity_view_generated_images={identity.view_profile_generated_images}
               on_identity_delete_memory_item={identity.delete_profile_memory_item}
@@ -271,127 +211,108 @@ export default function Home() {
           <div className="shrink-0">
             <MouthTranscriptBar transcript={transcript} />
           </div>
-
-          {/* Hidden camera element for background face recognition */}
-          <video
-            ref={identity.video_ref}
-            muted
-            playsInline
-            className="fixed left-0 top-0 h-1 w-1 opacity-0 pointer-events-none"
-          />
         </main>
       ) : (
-        <>
-          {/* Fullscreen button in top left */}
-          <div className="fixed left-6 top-6 z-50">
-            <FullscreenButton />
-          </div>
-
-          {/* Settings button in top right */}
-          <div className="fixed right-6 top-6 z-50">
-            <SettingsPanel
-              is_loading_mics={is_loading_mics}
-              is_loading_voices={is_loading_voices}
-              is_disabled={false}
-              mic_devices={mic_devices}
-              on_load_voices={load_voices}
-              on_load_mics={load_mics}
-              on_select_voice={select_voice}
-              on_select_mic={select_mic}
-              selected_mic_id={selected_mic_id}
-              selected_voice_id={selected_voice_id}
-              voice_error={voice_error}
-              voice_options={voice_options}
-              profiles={identity.profiles}
-              recognized_profile_id={identity.recognized_profile_id}
-              recognized_label={recognized_label}
-              is_identity_camera_running={identity.is_camera_running}
-              is_identity_models_loaded={identity.is_models_loaded}
-              is_identity_busy={identity.is_profile_action_running}
-              identity_error_message={identity.profile_action_error}
-              on_identity_refresh={() => void identity.refresh_profiles()}
-              on_identity_delete_profile={(args) => void identity.delete_profile(args)}
-              on_identity_create_profile={(args) => void identity.create_profile(args)}
-              on_identity_capture_enrollment={identity.capture_profile_enrollment}
-              on_identity_view_memory={identity.view_profile_memory}
-              on_identity_view_generated_images={identity.view_profile_generated_images}
-              on_identity_delete_memory_item={identity.delete_profile_memory_item}
-            />
-          </div>
-
-          <main className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-6 py-12">
-            {/* Main Ambit Visualizer - Large and Centered */}
-            <section className="flex flex-col items-center gap-8 pt-12">
-              <div className="flex flex-col items-center gap-3">
-                <h1 className="text-4xl font-bold tracking-tight">Ambit</h1>
-                <p className="text-sm text-zinc-400">
-                  {is_active ? "Listening..." : "Ready to listen"}
-                </p>
-              </div>
-
-              {/* Large visualizer */}
-              <div className="w-full max-w-2xl">
-                <SttVisualizer
+        <main className="mx-auto w-full max-w-[980px] px-[clamp(10px,2.6vw,18px)] py-[clamp(14px,3vw,28px)]">
+          <div className="relative overflow-hidden rounded-[clamp(22px,4vw,32px)] border border-zinc-800/80 bg-black/35 p-[clamp(10px,2.6vw,18px)] shadow-2xl ring-1 ring-white/5">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(56,189,248,0.08),transparent_55%),radial-gradient(ellipse_at_bottom,rgba(168,85,247,0.10),transparent_55%)]" />
+            <div className="relative flex flex-col gap-[clamp(10px,2.2vw,16px)]">
+              <div className="shrink-0">
+                <MouthTopBar
+                  // STT
+                  is_loading_mics={is_loading_mics}
+                  is_loading_voices={is_loading_voices}
+                  mic_devices={mic_devices}
+                  on_load_voices={load_voices}
+                  on_load_mics={load_mics}
+                  on_select_voice={select_voice}
+                  on_select_mic={select_mic}
+                  selected_mic_id={selected_mic_id}
+                  selected_voice_id={selected_voice_id}
+                  voice_error={voice_error}
+                  voice_options={voice_options}
+                  // Identity
+                  profiles={identity.profiles}
+                  recognized_profile_id={identity.recognized_profile_id}
+                  recognized_label={recognized_label}
+                  identity_pill_value={identity_label}
+                  identity_pill_tone={identity_tone}
+                  is_identity_camera_running={identity.is_camera_running}
+                  is_identity_models_loaded={identity.is_models_loaded}
+                  is_identity_busy={identity.is_profile_action_running}
+                  identity_error_message={identity_error_message}
+                  on_identity_refresh={() => void identity.refresh_profiles()}
+                  on_identity_delete_profile={(args) => void identity.delete_profile(args)}
+                  on_identity_create_profile={(args) => void identity.create_profile(args)}
+                  on_identity_update_profile={(args) => void identity.update_profile(args)}
+                  on_identity_capture_enrollment={identity.capture_profile_enrollment}
+                  on_identity_add_profile_enrollment={(args) => void identity.add_profile_enrollment(args)}
+                  on_identity_view_memory={identity.view_profile_memory}
+                  on_identity_view_generated_images={identity.view_profile_generated_images}
+                  on_identity_delete_memory_item={identity.delete_profile_memory_item}
+                  // Status
+                  state_label={state}
+                  state_tone={
+                    state === "speaking" ? "ok" : state === "thinking" ? "warn" : "neutral"
+                  }
                   is_connected={is_connected}
-                  is_responding={is_responding}
-                  is_speaking={is_speaking}
-                  is_tts_playing={is_tts_playing}
-                  tts_audio_element={tts_audio_element}
-                  identity_label={identity_label}
-                  identity_kind={identity_kind}
                 />
               </div>
 
-              {/* Hidden camera element for background face recognition */}
-              <video
-                ref={identity.video_ref}
-                muted
-                playsInline
-                className="fixed left-0 top-0 h-1 w-1 opacity-0 pointer-events-none"
-              />
+              <div className="flex h-[clamp(320px,52vh,560px)] flex-col">
+                <MouthWaves state={state} tts_audio_element={tts_audio_element} />
+              </div>
 
-              {/* Response Display */}
-              {response_text && (
-                <div className="w-full max-w-2xl rounded-2xl border border-zinc-700 bg-zinc-900/50 p-6 shadow-lg">
-                  <p className="text-lg text-zinc-100 leading-relaxed whitespace-pre-wrap">
-                    {response_text}
+              <div className="shrink-0">
+                <MouthTranscriptBar transcript={transcript} />
+              </div>
+
+              {response_text || is_responding ? (
+                <div className="shrink-0 rounded-[clamp(18px,4vw,28px)] border border-zinc-800 bg-black/45 px-[clamp(12px,2.6vw,18px)] py-[clamp(10px,2.2vw,14px)]">
+                  <p className="text-[clamp(10px,1.3vw,12px)] uppercase tracking-[0.22em] text-zinc-500">
+                    Response
+                  </p>
+                  <p className="mt-2 text-[clamp(14px,2.2vw,20px)] font-medium text-zinc-100 leading-snug whitespace-pre-wrap">
+                    {display_response_text.trim() || (is_responding ? "Thinking…" : "…")}
                   </p>
                 </div>
-              )}
+              ) : null}
 
-              {/* Show loading state when responding */}
-              {is_responding && !response_text && (
-                <div className="w-full max-w-2xl rounded-2xl border border-zinc-700 bg-zinc-900/50 p-6">
-                  <p className="text-base text-zinc-400 italic">Thinking...</p>
+              <div className="shrink-0 pt-1">
+                <div className="flex items-center justify-center gap-3">
+                  {!is_connected ? (
+                    <button
+                      className="rounded-full border border-cyan-300/20 bg-cyan-500/10 px-6 py-2.5 text-sm font-semibold text-cyan-100 hover:bg-cyan-500/15 disabled:cursor-not-allowed disabled:opacity-50"
+                      onClick={start_realtime}
+                      disabled={is_speaking}
+                      type="button"
+                    >
+                      Start
+                    </button>
+                  ) : (
+                    <button
+                      className="rounded-full border border-zinc-700 bg-zinc-950/40 px-6 py-2.5 text-sm font-semibold text-zinc-100 hover:border-zinc-600 disabled:cursor-not-allowed disabled:opacity-50"
+                      onClick={stop_realtime}
+                      disabled={is_speaking}
+                      type="button"
+                    >
+                      Stop
+                    </button>
+                  )}
                 </div>
-              )}
-
-              {/* Simple toggle control */}
-              <div className="flex items-center gap-4">
-                {!is_connected ? (
-                  <button
-                    className="rounded-full bg-blue-500 px-8 py-3 text-base font-semibold text-white hover:bg-blue-600 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
-                    onClick={start_realtime}
-                    disabled={is_speaking}
-                    type="button"
-                  >
-                    Start Conversation
-                  </button>
-                ) : (
-                  <button
-                    className="rounded-full border border-zinc-700 px-8 py-3 text-base font-semibold text-zinc-100 hover:border-zinc-600 disabled:cursor-not-allowed disabled:border-zinc-800 disabled:text-zinc-500"
-                    onClick={stop_realtime}
-                    disabled={is_speaking}
-                    type="button"
-                  >
-                    Stop
-                  </button>
-                )}
               </div>
-            </section>
-          </main>
-        </>
+            </div>
+          </div>
+        </main>
       )}
+
+      {/* Hidden camera element for background face recognition */}
+      <video
+        ref={identity.video_ref}
+        muted
+        playsInline
+        className="fixed left-0 top-0 h-1 w-1 opacity-0 pointer-events-none"
+      />
     </div>
   );
 }

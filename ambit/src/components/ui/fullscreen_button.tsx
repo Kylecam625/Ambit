@@ -5,7 +5,7 @@ import { toggle_fullscreen } from "@/lib/ui/fullscreen";
 export const FullscreenButton = () => {
   return (
     <button
-      className="rounded-full border border-zinc-700 bg-zinc-900 p-3 text-zinc-300 hover:border-zinc-600 hover:text-zinc-100"
+      className="rounded-full border border-zinc-800/80 bg-black/30 p-3 text-zinc-300 backdrop-blur hover:border-zinc-700 hover:text-zinc-100"
       onClick={() => void toggle_fullscreen()}
       type="button"
       title="Fullscreen"

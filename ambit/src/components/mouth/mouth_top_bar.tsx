@@ -7,31 +7,50 @@ import type {
   identity_memory,
   identity_profile_summary,
 } from "@/lib/identity/identity_types";
+import type { ReactNode } from "react";
 
-const pill = ({
-  label,
-  value,
+type tone = "neutral" | "ok" | "warn" | "bad";
+
+const tone_border: Record<tone, string> = {
+  neutral: "border-zinc-800/80",
+  ok: "border-emerald-700/40",
+  warn: "border-amber-700/40",
+  bad: "border-red-700/40",
+};
+
+const tone_dot: Record<tone, string> = {
+  neutral: "bg-zinc-400/70",
+  ok: "bg-emerald-400",
+  warn: "bg-amber-400",
+  bad: "bg-red-400",
+};
+
+const Chip = ({
   tone = "neutral",
+  className = "",
+  title,
+  children,
 }: {
-  label: string;
-  value: string;
-  tone?: "neutral" | "ok" | "warn" | "bad";
+  tone?: tone;
+  className?: string;
+  title?: string;
+  children: ReactNode;
 }) => {
-  const tone_classes =
-    tone === "ok"
-      ? "border-emerald-700/50 text-emerald-200"
-      : tone === "warn"
-        ? "border-amber-700/50 text-amber-200"
-        : tone === "bad"
-          ? "border-red-700/50 text-red-200"
-          : "border-zinc-800 text-zinc-200";
-
   return (
-    <span className={`rounded-full border bg-black/40 px-2 py-1 text-[11px] ${tone_classes}`}>
-      <span className="text-zinc-500">{label}</span> {value}
-    </span>
+    <div
+      className={`inline-flex min-w-0 items-center gap-2 whitespace-nowrap rounded-full border bg-black/30 px-3 py-1.5 text-[12px] text-zinc-100 backdrop-blur ${tone_border[tone]} ${className}`}
+      title={title}
+    >
+      {children}
+    </div>
   );
 };
+
+const Dot = ({ tone = "neutral" }: { tone?: tone }) => (
+  <span className={`h-2 w-2 shrink-0 rounded-full ${tone_dot[tone]}`} aria-hidden="true" />
+);
+
+const capitalize = (value: string) => (value ? value[0]!.toUpperCase() + value.slice(1) : value);
 
 export const MouthTopBar = ({
   is_loading_mics,
@@ -49,6 +68,8 @@ export const MouthTopBar = ({
   profiles,
   recognized_profile_id,
   recognized_label,
+  identity_pill_value,
+  identity_pill_tone,
   is_identity_camera_running,
   is_identity_models_loaded,
   is_identity_busy,
@@ -56,7 +77,9 @@ export const MouthTopBar = ({
   on_identity_refresh,
   on_identity_delete_profile,
   on_identity_create_profile,
+  on_identity_update_profile,
   on_identity_capture_enrollment,
+  on_identity_add_profile_enrollment,
   on_identity_view_memory,
   on_identity_view_generated_images,
   on_identity_delete_memory_item,
@@ -82,6 +105,8 @@ export const MouthTopBar = ({
   profiles: identity_profile_summary[];
   recognized_profile_id: string | null;
   recognized_label: string;
+  identity_pill_value?: string;
+  identity_pill_tone?: tone;
   is_identity_camera_running: boolean;
   is_identity_models_loaded: boolean;
   is_identity_busy: boolean;
@@ -92,10 +117,21 @@ export const MouthTopBar = ({
     name: string;
     age: number | null;
     interests: string;
+    phone_number: string | null;
+    sms_consent: boolean;
     enrollment_descriptors: number[][];
     enrollment_thumbnails: Array<string | null>;
   }) => void;
+  on_identity_update_profile: (args: {
+    profile_id: string;
+    name: string;
+    age: number | null;
+    interests: string;
+    phone_number: string | null;
+    sms_consent: boolean;
+  }) => void;
   on_identity_capture_enrollment: () => Promise<{ descriptor: number[]; thumbnail: string | null } | null>;
+  on_identity_add_profile_enrollment: (args: { profile_id: string }) => Promise<void> | void;
   on_identity_view_memory: (profile_id: string) => Promise<identity_memory | null>;
   on_identity_view_generated_images: (profile_id: string) => Promise<identity_generated_image[] | null>;
   on_identity_delete_memory_item: (args: {
@@ -106,60 +142,93 @@ export const MouthTopBar = ({
 
   // Status
   state_label: string;
-  state_tone: "neutral" | "ok" | "warn" | "bad";
+  state_tone: tone;
   is_connected: boolean;
 }) => {
   const selected_mic_label =
-    mic_devices.find((d) => d.device_id === selected_mic_id)?.label ?? "Default";
+    mic_devices.find((d) => d.device_id === selected_mic_id)?.label ?? "System";
   const selected_voice_label =
-    voice_options.find((v) => v.voice_id === selected_voice_id)?.name ?? "Voice";
+    voice_options.find((v) => v.voice_id === selected_voice_id)?.name ??
+    (selected_voice_id ? "Voice" : "Auto");
 
-  const identity_tone = is_identity_camera_running && is_identity_models_loaded ? "ok" : "warn";
-  const connection_tone = is_connected ? "ok" : "warn";
+  const identity_value = identity_pill_value ?? (recognized_label || "Anonymous");
+  const identity_tone =
+    identity_pill_tone ??
+    (is_identity_camera_running && is_identity_models_loaded && Boolean(recognized_profile_id)
+      ? "ok"
+      : "warn");
+  const identity_title = identity_error_message
+    ? `Identity: ${identity_value} • ${identity_error_message}`
+    : `Identity: ${identity_value}`;
+  const connection_tone: tone = is_connected ? "ok" : "warn";
+  const should_show_audio = Boolean(selected_mic_id) || Boolean(selected_voice_id);
 
   return (
-    <div className="flex items-center justify-between gap-2">
-      <div className="flex items-center gap-2">
-        <FullscreenButton />
-        {pill({ label: "state", value: state_label, tone: state_tone })}
-        {pill({ label: "conn", value: is_connected ? "on" : "off", tone: connection_tone })}
-        {pill({ label: "id", value: recognized_label || "Anonymous", tone: identity_tone })}
-        <span className="hidden sm:inline">
-          {pill({ label: "mic", value: selected_mic_label })}
-        </span>
-        <span className="hidden sm:inline">
-          {pill({ label: "voice", value: selected_voice_label })}
-        </span>
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <Chip
+          tone={state_tone}
+          title={`State: ${capitalize(state_label)} • ${is_connected ? "Online" : "Offline"}`}
+        >
+          <Dot tone={connection_tone} />
+          <span className="font-semibold">{capitalize(state_label)}</span>
+          <span className="text-zinc-600">•</span>
+          <span className="text-zinc-400">{is_connected ? "Online" : "Offline"}</span>
+        </Chip>
+
+        <Chip tone={identity_tone} className="min-w-0" title={identity_title}>
+          <Dot tone={identity_tone} />
+          <span className="min-w-0 truncate">{identity_value}</span>
+        </Chip>
+
+        {should_show_audio ? (
+          <Chip
+            tone="neutral"
+            className="hidden min-w-0 lg:inline-flex"
+            title={`Mic: ${selected_mic_label} • Voice: ${selected_voice_label}`}
+          >
+            <span className="text-zinc-500">Mic</span>
+            <span className="min-w-0 max-w-[220px] truncate">{selected_mic_label}</span>
+            <span className="text-zinc-700">/</span>
+            <span className="text-zinc-500">Voice</span>
+            <span className="min-w-0 max-w-[220px] truncate">{selected_voice_label}</span>
+          </Chip>
+        ) : null}
       </div>
 
-      <SettingsPanel
-        is_loading_mics={is_loading_mics}
-        is_loading_voices={is_loading_voices}
-        is_disabled={false}
-        mic_devices={mic_devices}
-        on_load_voices={on_load_voices}
-        on_load_mics={on_load_mics}
-        on_select_voice={on_select_voice}
-        on_select_mic={on_select_mic}
-        selected_mic_id={selected_mic_id}
-        selected_voice_id={selected_voice_id}
-        voice_error={voice_error}
-        voice_options={voice_options}
-        profiles={profiles}
-        recognized_profile_id={recognized_profile_id}
-        recognized_label={recognized_label}
-        is_identity_camera_running={is_identity_camera_running}
-        is_identity_models_loaded={is_identity_models_loaded}
-        is_identity_busy={is_identity_busy}
-        identity_error_message={identity_error_message}
-        on_identity_refresh={on_identity_refresh}
-        on_identity_delete_profile={on_identity_delete_profile}
-        on_identity_create_profile={on_identity_create_profile}
-        on_identity_capture_enrollment={on_identity_capture_enrollment}
-        on_identity_view_memory={on_identity_view_memory}
-        on_identity_view_generated_images={on_identity_view_generated_images}
-        on_identity_delete_memory_item={on_identity_delete_memory_item}
-      />
+      <div className="flex shrink-0 items-center gap-2">
+        <FullscreenButton />
+        <SettingsPanel
+          is_loading_mics={is_loading_mics}
+          is_loading_voices={is_loading_voices}
+          is_disabled={false}
+          mic_devices={mic_devices}
+          on_load_voices={on_load_voices}
+          on_load_mics={on_load_mics}
+          on_select_voice={on_select_voice}
+          on_select_mic={on_select_mic}
+          selected_mic_id={selected_mic_id}
+          selected_voice_id={selected_voice_id}
+          voice_error={voice_error}
+          voice_options={voice_options}
+          profiles={profiles}
+          recognized_profile_id={recognized_profile_id}
+          recognized_label={recognized_label}
+          is_identity_camera_running={is_identity_camera_running}
+          is_identity_models_loaded={is_identity_models_loaded}
+          is_identity_busy={is_identity_busy}
+          identity_error_message={identity_error_message}
+          on_identity_refresh={on_identity_refresh}
+          on_identity_delete_profile={on_identity_delete_profile}
+          on_identity_create_profile={on_identity_create_profile}
+          on_identity_update_profile={on_identity_update_profile}
+          on_identity_capture_enrollment={on_identity_capture_enrollment}
+          on_identity_add_profile_enrollment={on_identity_add_profile_enrollment}
+          on_identity_view_memory={on_identity_view_memory}
+          on_identity_view_generated_images={on_identity_view_generated_images}
+          on_identity_delete_memory_item={on_identity_delete_memory_item}
+        />
+      </div>
     </div>
   );
 };

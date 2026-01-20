@@ -5,7 +5,6 @@ import {
   OPENAI_DOCS_MCP_TOOL,
   SYSTEM_PROMPT,
 } from "./openai_constants";
-import { create_conversation_id } from "./openai_conversations";
 import { ambit_tools, type ambit_tool_name } from "./ambit_tools";
 
 export type ConversationMessage = {
@@ -120,6 +119,11 @@ const extract_first_tool_call = (response: Record<string, unknown>): extracted_t
     if (
       name !== "analyze_camera_frame" &&
       name !== "generate_photo" &&
+      name !== "calendar_list_events" &&
+      name !== "calendar_get_event" &&
+      name !== "calendar_create_event" &&
+      name !== "calendar_update_event" &&
+      name !== "calendar_delete_event" &&
       name !== "send_text_message"
     ) {
       continue;
@@ -190,18 +194,9 @@ export const create_openai_response = async ({
     { role: "user", content: text },
   ];
 
-  const should_create_conversation =
-    !conversation_id && !previous_response_id && history.length === 0;
-
-  const next_conversation_id =
-    conversation_id ??
-    (should_create_conversation ? await create_conversation_id({ openai }) : null);
-
-  const should_use_conversation = Boolean(next_conversation_id);
-  const should_use_previous_response_id =
-    !should_use_conversation && Boolean(previous_response_id);
-
-  // Always send the full conversation history to maintain context
+  // Always send the full conversation history to maintain context.
+  // We intentionally avoid OpenAI "conversation" state in this app because it can get
+  // stuck when tool calls are interrupted (barge-in, duplicate transcript_done, etc).
   const openai_input = input_with_history;
 
   const instructions = build_instructions({ extra_instructions });
@@ -212,14 +207,6 @@ export const create_openai_response = async ({
     input: openai_input,
     tools: [OPENAI_DOCS_MCP_TOOL],
   };
-
-  if (should_use_previous_response_id && previous_response_id) {
-    payload["previous_response_id"] = previous_response_id;
-  }
-
-  if (should_use_conversation && next_conversation_id) {
-    payload["conversation"] = next_conversation_id;
-  }
 
   const response = await openai_responses_create({ openai, payload });
   const response_id = normalize_string(response["id"]);
@@ -245,7 +232,7 @@ export const create_openai_response = async ({
     speech_text,
     updated_history,
     response_id,
-    conversation_id: next_conversation_id,
+    conversation_id: null,
   };
 };
 
@@ -278,6 +265,7 @@ export const create_openai_response_with_tools = async ({
   previous_response_id = null,
   conversation_id = null,
   extra_instructions = null,
+  forced_tool_name = null,
 }: {
   openai: OpenAI;
   text: string;
@@ -285,22 +273,12 @@ export const create_openai_response_with_tools = async ({
   previous_response_id?: string | null;
   conversation_id?: string | null;
   extra_instructions?: string | null;
+  forced_tool_name?: ambit_tool_name | null;
 }): Promise<create_openai_response_with_tools_result> => {
   const input_with_history: ConversationMessage[] = [
     ...history,
     { role: "user", content: text },
   ];
-
-  const should_create_conversation =
-    !conversation_id && !previous_response_id && history.length === 0;
-
-  const next_conversation_id =
-    conversation_id ??
-    (should_create_conversation ? await create_conversation_id({ openai }) : null);
-
-  const should_use_conversation = Boolean(next_conversation_id);
-  const should_use_previous_response_id =
-    !should_use_conversation && Boolean(previous_response_id);
 
   const instructions = build_instructions({ extra_instructions });
 
@@ -309,16 +287,10 @@ export const create_openai_response_with_tools = async ({
     instructions,
     input: input_with_history,
     tools: ambit_tools,
-    tool_choice: "auto",
+    tool_choice: forced_tool_name
+      ? { type: "function", name: forced_tool_name }
+      : "auto",
   };
-
-  if (should_use_previous_response_id && previous_response_id) {
-    payload["previous_response_id"] = previous_response_id;
-  }
-
-  if (should_use_conversation && next_conversation_id) {
-    payload["conversation"] = next_conversation_id;
-  }
 
   const response = await openai_responses_create({ openai, payload });
   const response_id = normalize_string(response["id"]);
@@ -333,7 +305,7 @@ export const create_openai_response_with_tools = async ({
       kind: "tool_request",
       tool_request: tool_call,
       response_id,
-      conversation_id: next_conversation_id,
+      conversation_id: null,
     };
   }
 
@@ -355,7 +327,7 @@ export const create_openai_response_with_tools = async ({
     speech_text,
     updated_history,
     response_id,
-    conversation_id: next_conversation_id,
+    conversation_id: null,
   };
 };
 

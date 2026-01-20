@@ -88,6 +88,6 @@ export const get_elevenlabs_model_id = (): string => {
     process.env.ELEVEN_TTS_MODEL ??
     process.env.ELEVENLABS_TTS_MODEL ??
     process.env.ELEVENLABS_MODEL ??
-    "eleven_flash_v2_5"
+    "eleven_v3"
   );
 };

@@ -4,6 +4,9 @@ CREATE TABLE IF NOT EXISTS profiles (
   name TEXT NOT NULL,
   age INTEGER,
   interests TEXT,
+  phone_number TEXT,
+  sms_consent INTEGER NOT NULL DEFAULT 0,
+  sms_consent_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -52,8 +55,28 @@ CREATE TABLE IF NOT EXISTS generated_images (
 CREATE INDEX IF NOT EXISTS idx_generated_images_profile_id ON generated_images(profile_id);
 `;
 
+const ensure_profile_columns = (db) => {
+  // SQLite doesn't auto-migrate when CREATE TABLE IF NOT EXISTS runs.
+  // Add new columns for existing databases as needed.
+  const cols = db.prepare("PRAGMA table_info(profiles)").all();
+  const names = new Set(cols.map((c) => String(c.name || "").trim()).filter(Boolean));
+
+  if (!names.has("phone_number")) {
+    db.exec("ALTER TABLE profiles ADD COLUMN phone_number TEXT");
+  }
+
+  if (!names.has("sms_consent")) {
+    db.exec("ALTER TABLE profiles ADD COLUMN sms_consent INTEGER NOT NULL DEFAULT 0");
+  }
+
+  if (!names.has("sms_consent_at")) {
+    db.exec("ALTER TABLE profiles ADD COLUMN sms_consent_at TEXT");
+  }
+};
+
 const ensure_schema = (db) => {
   db.exec(SCHEMA_SQL);
+  ensure_profile_columns(db);
 };
 
 module.exports = { ensure_schema };

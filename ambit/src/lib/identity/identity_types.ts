@@ -3,6 +3,9 @@ export type identity_profile_summary = {
   name: string;
   age: number | null;
   interests: string;
+  phone_number: string | null;
+  sms_consent: boolean;
+  sms_consent_at: string | null;
   created_at: string;
   updated_at: string;
   descriptor_count: number;
@@ -45,6 +48,9 @@ export type identity_profile = {
   name: string;
   age: number | null;
   interests: string;
+  phone_number: string | null;
+  sms_consent: boolean;
+  sms_consent_at: string | null;
   created_at: string;
   updated_at: string;
 };

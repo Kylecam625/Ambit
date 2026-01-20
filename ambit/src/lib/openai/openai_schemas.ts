@@ -9,6 +9,7 @@ export type RequestBody = {
   conversation_id?: string | null;
   profile_id?: string | null;
   message_seq?: number;
+  active_image_task_id?: string | null;
 };
 
 export const sanitize_history = (value: unknown): ConversationMessage[] => {
@@ -78,6 +79,8 @@ export const parse_respond_request = async (
       typeof data?.message_seq === "number" && Number.isFinite(data.message_seq)
         ? Math.max(0, Math.floor(data.message_seq))
         : 0;
+    const active_image_task_id =
+      typeof data?.active_image_task_id === "string" ? data.active_image_task_id.trim() : null;
 
     return {
       text,
@@ -86,6 +89,7 @@ export const parse_respond_request = async (
       conversation_id,
       profile_id,
       message_seq,
+      active_image_task_id,
     };
   } catch {
     return null;

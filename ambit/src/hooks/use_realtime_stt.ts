@@ -8,6 +8,7 @@ import {
   load_session_conversation_state,
   persist_session_conversation_state,
 } from "@/lib/realtime/session_conversation_storage";
+import { strip_elevenlabs_v3_audio_tags_from_messages } from "@/lib/elevenlabs/elevenlabs_audio_tags";
 
 type mic_device = {
   device_id: string;
@@ -35,6 +36,80 @@ const MAX_CONVERSATION_MESSAGE_CHARS = 2000;
 const is_record = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
+const find_suffix_prefix_overlap = (left: string, right: string): number => {
+  const max_len = Math.min(left.length, right.length);
+  for (let len = max_len; len > 0; len -= 1) {
+    if (left.slice(-len) === right.slice(0, len)) {
+      return len;
+    }
+  }
+  return 0;
+};
+
+const merge_transcript_delta = ({
+  current,
+  delta,
+}: {
+  current: string;
+  delta: string;
+}): string => {
+  if (!delta) return current;
+  if (!current) return delta;
+
+  // Some realtime transcription implementations emit the full partial transcript
+  // (not just an append-only delta). Handle both safely.
+  if (delta.startsWith(current)) return delta;
+  if (current.endsWith(delta)) return current;
+
+  const direct_overlap = find_suffix_prefix_overlap(current, delta);
+
+  // Also handle a common overlap shape where the delta repeats the last word but
+  // includes leading whitespace (e.g. " want to" after already having "...want").
+  const left_trimmed = delta.replace(/^\s+/, "");
+  const trimmed_overlap =
+    left_trimmed !== delta ? find_suffix_prefix_overlap(current, left_trimmed) : 0;
+
+  if (trimmed_overlap > direct_overlap && trimmed_overlap > 0) {
+    return current + left_trimmed.slice(trimmed_overlap);
+  }
+
+  if (direct_overlap > 0) {
+    return current + delta.slice(direct_overlap);
+  }
+
+  return current + delta;
+};
+
+const normalize_conversation_history = (value: unknown): conversation_message[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const normalized = value
+    .map((item): conversation_message | null => {
+      if (!is_record(item)) return null;
+
+      const role = item["role"];
+      const content = item["content"];
+
+      if (role !== "user" && role !== "assistant") return null;
+      if (typeof content !== "string") return null;
+
+      const trimmed = content.trim();
+      if (!trimmed) return null;
+
+      return {
+        role,
+        content: trimmed.slice(0, MAX_CONVERSATION_MESSAGE_CHARS),
+      };
+    })
+    .filter((item): item is conversation_message => Boolean(item));
+
+  return normalized.slice(-MAX_CONVERSATION_MESSAGES);
+};
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 void MAX_CONVERSATION_MESSAGE_CHARS;
 
 export const useRealtimeStt = ({
@@ -46,8 +121,9 @@ export const useRealtimeStt = ({
 } = {}) => {
   console.log(`[useRealtimeStt] Hook called with profile_id: ${profile_id}`);
   
-  // Load profile-specific conversation state
-  const initial_session = load_session_conversation_state(profile_id);
+  // Conversation state is intentionally shared across profile switches.
+  // Profile switching should change identity context (profile_id) without wiping conversation history.
+  const initial_session = load_session_conversation_state(null);
   console.log(`[useRealtimeStt] Loaded initial session:`, {
     profile_id,
     message_seq: initial_session.message_seq,
@@ -59,10 +135,25 @@ export const useRealtimeStt = ({
   const response_request_id_ref = useRef(0);
   const response_abort_ref = useRef<AbortController | null>(null);
   const last_spoken_text_ref = useRef("");
+  const last_transcript_done_ref = useRef<{ text: string; at_ms: number } | null>(null);
   const tts_request_id_ref = useRef(0);
+  const image_task_pollers_ref = useRef<
+    Record<
+      string,
+      {
+        abort_controller: AbortController;
+        timeout_id: number | null;
+        started_at_ms: number;
+        last_partial_image_index: number | null;
+      }
+    >
+  >({});
+  const latest_image_task_id_ref = useRef<string | null>(null);
+  const pending_ui_events_ref = useRef<ui_event[]>([]);
   const audio_ref = useRef<HTMLAudioElement | null>(null);
   const audio_url_ref = useRef<string | null>(null);
   const profile_id_ref = useRef<string | null>(profile_id);
+  const current_profile_id_ref = useRef<string | null>(profile_id);
   const conversation_history_ref = useRef<conversation_message[]>(
     initial_session.conversation_history
   );
@@ -79,23 +170,15 @@ export const useRealtimeStt = ({
   const [is_tts_playing, set_is_tts_playing] = useState(false);
   const [is_loading_mics, set_is_loading_mics] = useState(false);
   const [mic_devices, set_mic_devices] = useState<mic_device[]>([]);
-  const [selected_mic_id, set_selected_mic_id] = useState<string | null>(() => {
-    // Load saved mic from localStorage
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("ambit_selected_mic_id");
-    }
-    return null;
-  });
+  // Keep the initial render deterministic between SSR + client hydration.
+  // Saved mic/voice are loaded after mount in `load_mics()` / `load_voices()`.
+  const [selected_mic_id, set_selected_mic_id] = useState<string | null>(null);
+  const selected_mic_id_ref = useRef<string | null>(null);
   const [media_stream, set_media_stream] = useState<MediaStream | null>(null);
   const [is_loading_voices, set_is_loading_voices] = useState(false);
   const [voice_options, set_voice_options] = useState<voice_option[]>([]);
-  const [selected_voice_id, set_selected_voice_id] = useState<string | null>(() => {
-    // Load saved voice from localStorage
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("ambit_selected_voice_id");
-    }
-    return null;
-  });
+  const [selected_voice_id, set_selected_voice_id] = useState<string | null>(null);
+  const selected_voice_id_ref = useRef<string | null>(null);
   const [voice_error, set_voice_error] = useState<string | null>(null);
   const [transcript, set_transcript] = useState("");
   const [response_text, set_response_text] = useState("");
@@ -113,13 +196,43 @@ export const useRealtimeStt = ({
   );
   const [message_seq, set_message_seq] = useState<number>(() => initial_session.message_seq);
 
-  // Track the current profile_id to detect changes
-  const current_profile_id_ref = useRef<string | null>(profile_id);
-
   // Keep profile_id_ref in sync with the prop
   useEffect(() => {
+    if (profile_id_ref.current !== profile_id) {
+      console.log(`[useRealtimeStt] profile_id_ref updated: ${profile_id_ref.current} → ${profile_id}`);
+    }
     profile_id_ref.current = profile_id;
   }, [profile_id]);
+
+  // Keep mic/voice refs in sync with state so callbacks don't capture stale values.
+  useEffect(() => {
+    selected_mic_id_ref.current = selected_mic_id;
+  }, [selected_mic_id]);
+
+  useEffect(() => {
+    selected_voice_id_ref.current = selected_voice_id;
+  }, [selected_voice_id]);
+
+  // Read saved selections after mount (SSR-safe), but keep the initial render deterministic.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    try {
+      const saved_mic_id = window.localStorage.getItem("ambit_selected_mic_id");
+      if (saved_mic_id && !selected_mic_id_ref.current) {
+        selected_mic_id_ref.current = saved_mic_id;
+        set_selected_mic_id((current) => current ?? saved_mic_id);
+      }
+
+      const saved_voice_id = window.localStorage.getItem("ambit_selected_voice_id");
+      if (saved_voice_id && !selected_voice_id_ref.current) {
+        selected_voice_id_ref.current = saved_voice_id;
+        set_selected_voice_id((current) => current ?? saved_voice_id);
+      }
+    } catch {
+      // ignore localStorage issues
+    }
+  }, []);
 
   useEffect(() => {
     conversation_history_ref.current = conversation_history;
@@ -142,25 +255,24 @@ export const useRealtimeStt = ({
     console.log(`[State] message_seq changed to: ${message_seq}`);
   }, [message_seq]);
 
-  // CRITICAL: When profile changes, load that profile's conversation
-  // Enforces Rule 12.1: "Isolated Histories: Each profile maintains separate conversation history"
+  // When profile changes, load that profile's conversation (strict isolation).
   useEffect(() => {
     if (current_profile_id_ref.current === profile_id) {
       return; // No change
     }
 
     // Profile changed! Load the new profile's conversation state
-    console.log(`[Memory Isolation] Profile changed from ${current_profile_id_ref.current} to ${profile_id}`);
+    console.log(`[Profile Switch] Loading conversation for profile: ${profile_id || "anonymous"}`);
     current_profile_id_ref.current = profile_id;
 
     const new_session = load_session_conversation_state(profile_id);
-    console.log(`[Memory Isolation] Loaded new session:`, {
+    console.log(`[Profile Switch] Loaded session:`, {
       profile_id,
       message_seq: new_session.message_seq,
       conversation_history_length: new_session.conversation_history.length,
     });
     
-    // Keep realtime event handler state fresh immediately (avoid stale closures)
+    // Update refs immediately (avoid stale closures)
     conversation_history_ref.current = new_session.conversation_history;
     previous_response_id_ref.current = new_session.previous_response_id;
     conversation_id_ref.current = new_session.conversation_id;
@@ -178,7 +290,7 @@ export const useRealtimeStt = ({
     set_response_error(null);
   }, [profile_id]);
 
-  // Persist conversation state with profile_id for isolation
+  // Persist conversation state for the current profile.
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
@@ -197,7 +309,7 @@ export const useRealtimeStt = ({
         previous_response_id,
         conversation_id,
         message_seq,
-        profile_id,  // Include profile_id for isolated storage
+        profile_id,
       });
 
     } catch {
@@ -243,6 +355,187 @@ export const useRealtimeStt = ({
 
     set_is_responding(false);
   }, []);
+
+  const cancel_inflight = useCallback(() => {
+    cancel_response();
+    cancel_tts();
+  }, [cancel_response, cancel_tts]);
+
+  const stop_image_task_polling = useCallback((task_id: string) => {
+    const trimmed = task_id.trim();
+    if (!trimmed) return;
+
+    const pollers = image_task_pollers_ref.current;
+    const active = pollers[trimmed];
+    if (!active) return;
+
+    if (active.timeout_id !== null) {
+      window.clearTimeout(active.timeout_id);
+      active.timeout_id = null;
+    }
+
+    active.abort_controller.abort();
+    delete pollers[trimmed];
+  }, []);
+
+  const stop_all_image_task_polling = useCallback(() => {
+    const pollers = image_task_pollers_ref.current;
+    for (const task_id of Object.keys(pollers)) {
+      stop_image_task_polling(task_id);
+    }
+  }, [stop_image_task_polling]);
+
+  const flush_pending_ui_events = useCallback(() => {
+    const pending = pending_ui_events_ref.current;
+    if (pending.length === 0) return;
+    pending_ui_events_ref.current = [];
+    set_ui_events((current) => [...current, ...pending]);
+  }, []);
+
+  const start_image_task_polling = useCallback(
+    ({ task_id }: { task_id: string }) => {
+      const trimmed = task_id.trim();
+      if (!trimmed) return;
+
+      const pollers = image_task_pollers_ref.current;
+      if (pollers[trimmed]) return;
+
+      const abort_controller = new AbortController();
+      pollers[trimmed] = {
+        abort_controller,
+        timeout_id: null,
+        started_at_ms: Date.now(),
+        last_partial_image_index: null,
+      };
+
+      const poll_once = async (): Promise<void> => {
+        const active = image_task_pollers_ref.current[trimmed];
+        if (!active) return;
+        if (active.abort_controller.signal.aborted) return;
+
+        const age_ms = Date.now() - active.started_at_ms;
+        if (age_ms > 1000 * 60 * 10) {
+          console.warn(`[ImageTask] Poll timeout for task_id=${trimmed}`);
+          set_ui_events((current) => [
+            ...current,
+            { type: "image_task_timeout", task_id: trimmed },
+          ]);
+          stop_image_task_polling(trimmed);
+          return;
+        }
+
+        try {
+          const response = await fetch(`/api/realtime/image_task/${encodeURIComponent(trimmed)}`, {
+            method: "GET",
+            signal: active.abort_controller.signal,
+          });
+
+          const data = await response.json().catch(() => null);
+
+          if (!response.ok) {
+            active.timeout_id = window.setTimeout(() => void poll_once(), 1000);
+            return;
+          }
+
+          const status = typeof data?.status === "string" ? String(data.status).trim() : "";
+
+          const partial_image_data_url =
+            typeof data?.partial_image_data_url === "string"
+              ? String(data.partial_image_data_url)
+              : "";
+          const partial_image_index =
+            typeof data?.partial_image_index === "number" && Number.isFinite(data.partial_image_index)
+              ? Math.max(0, Math.floor(data.partial_image_index))
+              : null;
+
+          if (
+            status !== "succeeded" &&
+            status !== "failed" &&
+            partial_image_data_url &&
+            partial_image_index !== null &&
+            (active.last_partial_image_index === null ||
+              partial_image_index > active.last_partial_image_index)
+          ) {
+            active.last_partial_image_index = partial_image_index;
+            set_ui_events((current) => [
+              ...current,
+              {
+                type: "image_task_partial",
+                task_id: trimmed,
+                partial_image_index,
+                image_data_url: partial_image_data_url,
+              },
+            ]);
+          }
+
+          if (status === "succeeded") {
+            const image_data_url =
+              typeof data?.image_data_url === "string" ? String(data.image_data_url) : "";
+
+            if (image_data_url) {
+              const display_event: ui_event = {
+                type: "display_image",
+                image_data_url,
+                display_ms: 5000,
+                task_id: trimmed,
+              };
+
+              if (is_speaking_ref.current) {
+                pending_ui_events_ref.current = [...pending_ui_events_ref.current, display_event];
+              } else {
+                set_ui_events((current) => [...current, display_event]);
+              }
+            }
+
+            stop_image_task_polling(trimmed);
+            return;
+          }
+
+          if (status === "failed") {
+            const err =
+              typeof data?.error === "string" ? String(data.error) : "Image generation failed";
+            console.error(`[ImageTask] Failed task_id=${trimmed}:`, err);
+            set_ui_events((current) => [
+              ...current,
+              { type: "image_task_failed", task_id: trimmed, error: err },
+            ]);
+            stop_image_task_polling(trimmed);
+            return;
+          }
+
+          active.timeout_id = window.setTimeout(() => void poll_once(), 750);
+        } catch (error) {
+          if (active.abort_controller.signal.aborted) return;
+          console.warn(`[ImageTask] Poll error task_id=${trimmed}:`, error);
+          active.timeout_id = window.setTimeout(() => void poll_once(), 1000);
+        }
+      };
+
+      void poll_once();
+    },
+    [stop_image_task_polling]
+  );
+
+  const maybe_start_image_task_polling = useCallback(
+    ({ ui_events }: { ui_events: unknown[] }) => {
+      for (const event of ui_events) {
+        if (!is_record(event)) continue;
+        if (event["type"] !== "image_task_started") continue;
+        const task_id = typeof event["task_id"] === "string" ? event["task_id"].trim() : "";
+        if (!task_id) continue;
+        latest_image_task_id_ref.current = task_id;
+        start_image_task_polling({ task_id });
+      }
+    },
+    [start_image_task_polling]
+  );
+
+  useEffect(() => {
+    return () => {
+      stop_all_image_task_polling();
+      pending_ui_events_ref.current = [];
+    };
+  }, [stop_all_image_task_polling]);
 
   const request_tts = useCallback(
     async ({ text }: { text: string }) => {
@@ -459,7 +752,7 @@ export const useRealtimeStt = ({
       set_is_responding(true);
       set_response_error(null);
       set_response_text("");
-      set_ui_events([]);
+      set_ui_events((current) => current.slice(-20));
       last_spoken_text_ref.current = "";
       response_abort_ref.current?.abort();
       const abort_controller = new AbortController();
@@ -493,10 +786,11 @@ export const useRealtimeStt = ({
           console.log(`[Client] ⚠ No profile_id to add (current_profile_id is ${current_profile_id})`);
         }
         
-        if (current_conversation_id) {
-          body["conversation_id"] = current_conversation_id;
-        } else if (current_previous_response_id) {
-          body["previous_response_id"] = current_previous_response_id;
+        void current_conversation_id;
+        void current_previous_response_id;
+
+        if (latest_image_task_id_ref.current) {
+          body["active_image_task_id"] = latest_image_task_id_ref.current;
         }
 
         const response = await fetch("/api/realtime/respond", {
@@ -535,10 +829,37 @@ export const useRealtimeStt = ({
             throw new Error("Camera capture is not available");
           }
 
-          const image_data_url = await capture_camera_frame();
-          if (!image_data_url) {
-            throw new Error("Camera frame not ready. Try again in a moment.");
+          // Camera startup can lag behind the tool request (permission prompt, device warm-up, etc).
+          // Give it a little more time before falling back to an error-only tool output.
+          const capture_attempts = 20;
+          const capture_delay_ms = 150;
+          let image_data_url: string | null = null;
+
+          for (let attempt = 0; attempt < capture_attempts; attempt += 1) {
+            if (abort_controller.signal.aborted) return;
+            image_data_url = await capture_camera_frame();
+            if (image_data_url) break;
+            if (attempt < capture_attempts - 1) {
+              await sleep(capture_delay_ms);
+            }
           }
+
+          const camera_tool_output = (() => {
+            if (typeof window !== "undefined" && "isSecureContext" in window && !window.isSecureContext) {
+              return (
+                "I can’t access the camera because this page isn’t running in a secure context. " +
+                "Open it on https:// (or use http://localhost), then allow camera access and try again."
+              );
+            }
+            if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+              return (
+                "I can’t access the camera in this browser. Please use a modern browser and allow camera permission."
+              );
+            }
+            return (
+              "I can’t access the camera yet. Please allow camera permission (browser lock icon) and try again."
+            );
+          })();
 
           const pending_response_id =
             typeof data?.response_id === "string" ? data.response_id : "";
@@ -552,7 +873,7 @@ export const useRealtimeStt = ({
               tool_name: tool_name,
               call_id,
               tool_arguments,
-              image_data_url,
+              ...(image_data_url ? { image_data_url } : { tool_output: camera_tool_output }),
               previous_response_id: pending_response_id || null,
               conversation_id: pending_conversation_id || null,
               text: trimmed,
@@ -581,7 +902,9 @@ export const useRealtimeStt = ({
               : typeof tool_data?.response === "string"
                 ? tool_data.response
                 : "";
-          const updated_history = Array.isArray(tool_data?.history) ? tool_data.history : [];
+          const updated_history = strip_elevenlabs_v3_audio_tags_from_messages(
+            normalize_conversation_history(tool_data?.history)
+          );
           const next_ui_events = Array.isArray(tool_data?.ui_events) ? tool_data.ui_events : [];
           const response_id =
             typeof tool_data?.response_id === "string" ? tool_data.response_id : "";
@@ -589,7 +912,8 @@ export const useRealtimeStt = ({
             typeof tool_data?.conversation_id === "string" ? tool_data.conversation_id : "";
 
           set_response_text(next_response);
-          set_ui_events(next_ui_events);
+          set_ui_events((current) => [...current, ...next_ui_events].slice(-20));
+          maybe_start_image_task_polling({ ui_events: next_ui_events });
           set_conversation_history(updated_history);
           conversation_history_ref.current = updated_history;
 
@@ -616,14 +940,17 @@ export const useRealtimeStt = ({
             : typeof data?.response === "string"
               ? data.response
               : "";
-        const updated_history = Array.isArray(data?.history) ? data.history : [];
+        const updated_history = strip_elevenlabs_v3_audio_tags_from_messages(
+          normalize_conversation_history(data?.history)
+        );
         const next_ui_events = Array.isArray(data?.ui_events) ? data.ui_events : [];
         const response_id = typeof data?.response_id === "string" ? data.response_id : "";
         const next_conversation_id =
           typeof data?.conversation_id === "string" ? data.conversation_id : "";
 
         set_response_text(next_response);
-        set_ui_events(next_ui_events);
+        set_ui_events((current) => [...current, ...next_ui_events].slice(-20));
+        maybe_start_image_task_polling({ ui_events: next_ui_events });
         set_conversation_history(updated_history);
         conversation_history_ref.current = updated_history;
 
@@ -659,7 +986,7 @@ export const useRealtimeStt = ({
         }
       }
     },
-    [capture_camera_frame]
+    [capture_camera_frame, maybe_start_image_task_polling]
   );
 
   const handle_realtime_event = useCallback(
@@ -680,13 +1007,15 @@ export const useRealtimeStt = ({
           console.log("[VAD] Speech stopped");
           is_speaking_ref.current = false;
           set_is_speaking(false);
+          flush_pending_ui_events();
           break;
 
         case "transcript_delta":
           // Live transcription text (display only)
-          if (event.text) {
+          const delta_text = event.text;
+          if (delta_text) {
             set_transcript((current) => {
-              const next = `${current || ""}${event.text}`;
+              const next = merge_transcript_delta({ current: current || "", delta: delta_text });
               return next.slice(-MAX_CONVERSATION_MESSAGE_CHARS);
             });
           }
@@ -695,8 +1024,22 @@ export const useRealtimeStt = ({
         case "transcript_done":
           // Final transcript ready → send to AI
           if (event.text) {
-            set_transcript(event.text);
-            void request_response({ text: event.text });
+            const trimmed_text = event.text.trim();
+            if (!trimmed_text) break;
+
+            const now_ms = Date.now();
+            const prev = last_transcript_done_ref.current;
+            const is_dupe = Boolean(
+              prev && prev.text === trimmed_text && now_ms - prev.at_ms < 1000
+            );
+            if (is_dupe) {
+              console.log("[VAD] Ignoring duplicate transcript_done");
+              break;
+            }
+            last_transcript_done_ref.current = { text: trimmed_text, at_ms: now_ms };
+
+            set_transcript(trimmed_text);
+            void request_response({ text: trimmed_text });
           }
           break;
 
@@ -707,7 +1050,7 @@ export const useRealtimeStt = ({
           break;
       }
     },
-    [request_response, cancel_tts, cancel_response]
+    [request_response, cancel_tts, cancel_response, flush_pending_ui_events]
   );
 
   useEffect(() => {
@@ -735,9 +1078,33 @@ export const useRealtimeStt = ({
     try {
       const client = new RealtimeTranscriptionClient();
       await client.connect(handle_realtime_event);
-      const stream = await client.start_audio_stream({
-        device_id: selected_mic_id || undefined,
-      });
+      const saved_device_id = (() => {
+        if (typeof window === "undefined") return null;
+        try {
+          const raw = window.localStorage.getItem("ambit_selected_mic_id");
+          return typeof raw === "string" ? raw.trim() || null : null;
+        } catch {
+          return null;
+        }
+      })();
+
+      const desired_device_id = selected_mic_id_ref.current ?? saved_device_id;
+
+      const stream = await (async (): Promise<MediaStream> => {
+        if (!desired_device_id) {
+          return client.start_audio_stream();
+        }
+
+        try {
+          return await client.start_audio_stream({ device_id: desired_device_id });
+        } catch (error) {
+          console.warn(
+            `[Realtime] Failed to start audio stream with device_id=${desired_device_id}; falling back to default mic.`,
+            error
+          );
+          return client.start_audio_stream();
+        }
+      })();
       set_media_stream(stream);
 
       client_ref.current = client;
@@ -747,7 +1114,7 @@ export const useRealtimeStt = ({
         error instanceof Error ? error.message : "Failed to start realtime transcription";
       set_error_message(message);
     }
-  }, [is_connected, handle_realtime_event, selected_mic_id]);
+  }, [is_connected, handle_realtime_event]);
 
   const stop_realtime = useCallback(() => {
     const client = client_ref.current;
@@ -801,13 +1168,12 @@ export const useRealtimeStt = ({
 
     if (typeof window !== "undefined") {
       try {
-        // Clear the current profile's conversation state
-        clear_session_conversation_state(profile_id);
+        clear_session_conversation_state(null);
       } catch {
         // ignore
       }
     }
-  }, [cancel_tts, cancel_response, profile_id]);
+  }, [cancel_tts, cancel_response]);
 
   return {
     error_message,
@@ -821,6 +1187,7 @@ export const useRealtimeStt = ({
     load_voices,
     media_stream,
     mic_devices,
+    cancel_inflight,
     reset_transcript,
     reset_conversation,
     response_error,

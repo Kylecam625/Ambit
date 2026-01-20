@@ -1,6 +1,7 @@
 "use client";
 
 import { BarVisualizer, type AgentState } from "@/components/ui/bar_visualizer";
+import { strip_elevenlabs_v3_audio_tags } from "@/lib/elevenlabs/elevenlabs_audio_tags";
 
 const state_to_classes = (state: AgentState) => {
   switch (state) {
@@ -44,7 +45,7 @@ export const MouthDisplay = ({
   const theme = state_to_classes(state);
 
   const trimmed_transcript = transcript.trim();
-  const trimmed_response = response_text.trim();
+  const trimmed_response = strip_elevenlabs_v3_audio_tags(response_text).trim();
   const response_line = is_responding ? "Thinking…" : trimmed_response;
 
   const identity = identity_label.trim() || "Anonymous";

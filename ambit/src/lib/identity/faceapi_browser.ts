@@ -1,8 +1,14 @@
-const FACEAPI_SCRIPT_SRC =
-  "https://cdn.jsdelivr.net/npm/face-api.js/dist/face-api.min.js";
+const FACEAPI_SCRIPT_SRC = "/api/faceapi_js";
 
 export const DEFAULT_FACEAPI_MODEL_BASE_URL =
-  "https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights";
+  "/api/faceapi_weights";
+
+const FALLBACK_FACEAPI_MODEL_BASE_URLS: string[] = [
+  // Preferred: jsDelivr GitHub CDN (often works when raw.githubusercontent.com is blocked)
+  "https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights",
+  // Fallback: GitHub raw (original default)
+  "https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights",
+];
 
 type faceapi_model_loader = { loadFromUri: (url: string) => Promise<void> };
 type faceapi_nets = {
@@ -42,15 +48,28 @@ const load_script_once = async ({
   src: string;
 }) => {
   const existing = document.getElementById(id);
-  if (existing) return;
+  if (existing) {
+    const loaded = existing.getAttribute("data-loaded");
+    if (loaded === "1") return;
+    // Previous load failed or never completed; remove and retry.
+    existing.remove();
+  }
 
   await new Promise<void>((resolve, reject) => {
     const script = document.createElement("script");
     script.id = id;
     script.src = src;
     script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error(`Failed to load script: ${src}`));
+    script.setAttribute("data-loaded", "0");
+    script.onload = () => {
+      script.setAttribute("data-loaded", "1");
+      resolve();
+    };
+    script.onerror = () => {
+      // Allow retries.
+      script.remove();
+      reject(new Error(`Failed to load script: ${src}`));
+    };
     document.head.appendChild(script);
   });
 };
@@ -63,14 +82,20 @@ export const ensure_faceapi = async (): Promise<unknown> => {
   if (faceapi_promise) return faceapi_promise;
 
   faceapi_promise = (async () => {
-    const existing = (window as unknown as { faceapi?: unknown }).faceapi;
-    if (existing) return existing;
-    await load_script_once({ id: "faceapi-js", src: FACEAPI_SCRIPT_SRC });
-    const loaded = (window as unknown as { faceapi?: unknown }).faceapi;
-    if (!loaded) {
-      throw new Error("face-api.js loaded but window.faceapi is missing.");
+    try {
+      const existing = (window as unknown as { faceapi?: unknown }).faceapi;
+      if (existing) return existing;
+      await load_script_once({ id: "faceapi-js", src: FACEAPI_SCRIPT_SRC });
+      const loaded = (window as unknown as { faceapi?: unknown }).faceapi;
+      if (!loaded) {
+        throw new Error("face-api.js loaded but window.faceapi is missing.");
+      }
+      return loaded;
+    } catch (error) {
+      // If the CDN is blocked / flaky, allow future retries.
+      faceapi_promise = null;
+      throw error;
     }
-    return loaded;
   })();
 
   return faceapi_promise;
@@ -86,20 +111,46 @@ export const load_faceapi_models = async ({
     throw new Error("face-api.js loaded but expected nets loaders are missing.");
   }
   const faceapi = raw_faceapi;
-  const normalized =
-    typeof base_url === "string" && base_url.trim()
-      ? base_url.trim().replace(/\/+$/, "")
-      : DEFAULT_FACEAPI_MODEL_BASE_URL;
 
-  if (models_loaded_base_url === normalized && models_load_promise) {
-    return models_load_promise;
-  }
+  const normalize_base_url = (value: unknown): string | null => {
+    if (typeof value !== "string") return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    return trimmed.replace(/\/+$/, "");
+  };
 
-  models_loaded_base_url = normalized;
+  const preferred = normalize_base_url(base_url);
+  const candidates = [
+    preferred,
+    ...FALLBACK_FACEAPI_MODEL_BASE_URLS.map(normalize_base_url),
+    normalize_base_url(DEFAULT_FACEAPI_MODEL_BASE_URL),
+  ]
+    .filter((v): v is string => Boolean(v))
+    .filter((v, idx, arr) => arr.indexOf(v) === idx);
+
+  // Models are already loaded (or currently loading). No need to re-load from a different base URL.
+  if (models_load_promise) return models_load_promise;
+
   models_load_promise = (async () => {
-    await faceapi.nets.tinyFaceDetector.loadFromUri(normalized);
-    await faceapi.nets.faceLandmark68Net.loadFromUri(normalized);
-    await faceapi.nets.faceRecognitionNet.loadFromUri(normalized);
+    let last_error: unknown = null;
+    for (const candidate of candidates) {
+      try {
+        await faceapi.nets.tinyFaceDetector.loadFromUri(candidate);
+        await faceapi.nets.faceLandmark68Net.loadFromUri(candidate);
+        await faceapi.nets.faceRecognitionNet.loadFromUri(candidate);
+        models_loaded_base_url = candidate;
+        return;
+      } catch (error) {
+        last_error = error;
+      }
+    }
+
+    // IMPORTANT: If a model download fails once (network hiccup / blocked CDN),
+    // we must clear the cached promise so future calls can retry.
+    models_loaded_base_url = null;
+    models_load_promise = null;
+
+    throw last_error instanceof Error ? last_error : new Error("Failed to load face models.");
   })();
 
   return models_load_promise;

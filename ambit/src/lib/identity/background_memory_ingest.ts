@@ -6,6 +6,7 @@ import {
   identity_patch_memory,
 } from "./identity_service_client";
 import { extract_identity_memory_update_batch } from "./memory_extractor";
+import { strip_elevenlabs_v3_audio_tags_from_messages } from "@/lib/elevenlabs/elevenlabs_audio_tags";
 
 const BATCH_SIZE_MESSAGES = 10;
 
@@ -49,7 +50,9 @@ export const maybe_start_background_memory_ingest = ({
   }
 
   console.log(`[Memory Ingest] TRIGGERED! Processing memory extraction for profile_id=${profile_id}`);
-  const messages_window = updated_history.slice(-BATCH_SIZE_MESSAGES);
+  const messages_window = strip_elevenlabs_v3_audio_tags_from_messages(
+    updated_history.slice(-BATCH_SIZE_MESSAGES)
+  );
   console.log(`[Memory Ingest] Analyzing ${messages_window.length} messages`);
 
   void (async () => {

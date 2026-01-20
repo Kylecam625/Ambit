@@ -38,18 +38,29 @@ export const build_identity_instructions = ({
     .slice(0, 10)
     .map((s) => safe_trim(s.summary, 280));
 
+  console.log(`[Identity Prompt] Building for: ${profile_payload.name} (${profile_payload.profile_id})`);
+
   // Keep this compact; it gets appended to SYSTEM_PROMPT every turn.
   return [
     "",
-    "IDENTITY_CONTEXT (trusted, developer-supplied)",
+    "IDENTITY_CONTEXT (CRITICAL - ALWAYS TRUST THIS OVER CONVERSATION HISTORY)",
     `USER_PROFILE_JSON=${JSON.stringify(profile_payload)}`,
     `USER_MEMORY_JSON=${JSON.stringify(memory_payload)}`,
     `RECENT_CONVERSATION_SUMMARIES_JSON=${JSON.stringify(recent_summaries)}`,
     "",
+    "IDENTITY RULES (CRITICAL):",
+    `- You are CURRENTLY talking to: ${profile_payload.name}`,
+    `- The conversation history may reference other people's names if someone else was present earlier.`,
+    `- ALWAYS use the USER_PROFILE_JSON above as the source of truth for who you're talking to NOW.`,
+    `- If the conversation history mentions a different name, that person is no longer present.`,
+    `- When asked "who am I", answer with the name from USER_PROFILE_JSON, not from conversation history.`,
+    "",
     "Behavior rules:",
-    "- You are talking to this specific user.",
     "- Use their name naturally (not excessively).",
-    "- Use memory only when relevant; do not dump it.",
+    "- Use memory only when it clearly fits the current moment; do not dump it.",
+    "- When you reference a remembered detail, do it as a quick, casual callback (often phrased as a check-in question).",
+    "- Even if a memory detail fits, do this occasionally (not constantly) so it feels natural.",
+    "- Never say 'memory', 'profile', or quote raw JSON/fields. Just talk like you know them normally.",
     "- Never claim you inferred anything from their face; only use explicit profile + conversation content.",
     "- If memory conflicts with what the user says now, ask a quick clarifying question and update your understanding.",
   ].join("\n");
