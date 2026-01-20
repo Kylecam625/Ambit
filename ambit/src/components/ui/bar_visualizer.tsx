@@ -17,6 +17,7 @@ type BarVisualizerProps = {
   maxHeight?: number;
   centerAlign?: boolean;
   className?: string;
+  barClassName?: string;
 };
 
 // Global singleton for audio analysis - persists across hot reloads
@@ -45,9 +46,9 @@ class AudioAnalyzer {
         const analyser = context.createAnalyser();
         
         analyser.fftSize = 4096;
-        analyser.smoothingTimeConstant = 0.75;
+        analyser.smoothingTimeConstant = 0.55;
         analyser.minDecibels = -70;
-        analyser.maxDecibels = -20;
+        analyser.maxDecibels = -0;
 
         source.connect(analyser);
         source.connect(context.destination); // Hear the audio
@@ -184,12 +185,13 @@ const useAudioFrequencies = (
 
 export const BarVisualizer = ({
   state,
-  barCount = 30,
+  barCount = 40,
   audioElement = null,
   minHeight = 15,
   maxHeight = 90,
   centerAlign = true,
   className = "",
+  barClassName = "bg-blue-400",
 }: BarVisualizerProps) => {
   const is_speaking = state === "speaking";
   const frequencies = useAudioFrequencies(audioElement, is_speaking, barCount);
@@ -200,8 +202,8 @@ export const BarVisualizer = ({
     }
 
     // Apply power curve for better spread and less intensity
-    const shaped = Math.pow(freq, 0.75);
-    const boosted = shaped * 3.5;
+    const shaped = Math.pow(freq, 0.95);
+    const boosted = shaped * 5.5;
     const height = minHeight + Math.min(1, boosted) * (maxHeight - minHeight);
     return Math.max(minHeight, Math.min(maxHeight, height));
   });
@@ -213,7 +215,7 @@ export const BarVisualizer = ({
       {bar_heights.map((height, index) => (
         <div
           key={index}
-          className="flex-1 rounded-full bg-blue-400"
+          className={`flex-1 rounded-full ${barClassName}`}
           style={{
             height: `${height}%`,
             transition: is_speaking ? "height 0.05s ease-out" : "height 0.2s ease-out",

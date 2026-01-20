@@ -4,6 +4,8 @@
   "description": "",
   "main": "src/server.js",
   "scripts": {
+    "cleanup:enrollments:dry": "node src/cleanup_invalid_enrollments.js --dry-run",
+    "cleanup:enrollments": "node src/cleanup_invalid_enrollments.js",
     "dev": "node src/server.js",
     "start": "node src/server.js"
   },

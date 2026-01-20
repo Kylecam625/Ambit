@@ -1,5 +1,5 @@
 export const REALTIME_AUDIO_SAMPLE_RATE = 24000;
-export const REALTIME_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe";
+export const REALTIME_TRANSCRIPTION_MODEL = "gpt-4o-transcribe";
 
 export const REALTIME_AUDIO_PROCESSOR_BUFFER_SIZE = 2048;
 

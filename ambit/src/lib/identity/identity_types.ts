@@ -32,6 +32,14 @@ export type identity_conversation_summary = {
   created_at: string;
 };
 
+export type identity_generated_image = {
+  image_id: string;
+  profile_id: string;
+  prompt: string;
+  image_data_url: string;
+  created_at: string;
+};
+
 export type identity_profile = {
   profile_id: string;
   name: string;

@@ -1,9 +1,7 @@
 # Secrets / local env
 .env
 .env.*
-
-# Docs (per request: do not upload markdown files)
-*.md
+!.env.example
 
 # Node / JS
 node_modules/
@@ -23,6 +21,11 @@ coverage/
 # Local tooling
 .cursor/
 .DS_Store
+
+# Local working notes (not part of the product)
+FACIAL_RECOGNITION_INTEGRATION_RULES.md
+MEMORY_FIX_SUMMARY.md
+MEMORY_ISOLATION_DIAGRAM.md
 
 # Local data / DB files
 data/

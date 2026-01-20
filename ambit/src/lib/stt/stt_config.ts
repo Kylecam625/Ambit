@@ -1,4 +1,4 @@
-export const STT_MODEL = "gpt-4o-mini-transcribe";
+export const STT_MODEL = "gpt-4o-transcribe";
 
 export interface TranscriptionConfig {
   model: string;

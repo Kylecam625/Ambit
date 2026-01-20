@@ -1,7 +1,11 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
-import type { identity_profile_summary, identity_memory } from "@/lib/identity/identity_types";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type {
+  identity_profile_summary,
+  identity_memory,
+  identity_generated_image,
+} from "@/lib/identity/identity_types";
 
 const ENROLLMENT_CAPTURES_REQUIRED = 3;
 
@@ -17,17 +21,23 @@ export const ProfileManager = ({
   is_models_loaded,
   is_busy,
   error_message,
+  recognized_profile_id = null,
+  recognized_label = "Unknown",
   on_refresh,
   on_delete_profile,
   on_create_profile,
   on_capture_enrollment,
   on_view_memory,
+  on_view_generated_images,
+  on_delete_memory_item,
 }: {
   profiles: identity_profile_summary[];
   is_camera_running: boolean;
   is_models_loaded: boolean;
   is_busy: boolean;
   error_message: string | null;
+  recognized_profile_id?: string | null;
+  recognized_label?: string;
   on_refresh: () => void;
   on_delete_profile: (args: { profile_id: string; name: string }) => void;
   on_create_profile: (args: {
@@ -39,6 +49,12 @@ export const ProfileManager = ({
   }) => void;
   on_capture_enrollment: () => Promise<{ descriptor: number[]; thumbnail: string | null } | null>;
   on_view_memory: (profile_id: string) => Promise<identity_memory | null>;
+  on_view_generated_images: (profile_id: string) => Promise<identity_generated_image[] | null>;
+  on_delete_memory_item: (args: {
+    profile_id: string;
+    kind: "tag" | "fact" | "preference" | "note";
+    value: string;
+  }) => Promise<identity_memory | null>;
 }) => {
   const [is_modal_open, set_is_modal_open] = useState(false);
   const [name, set_name] = useState("");
@@ -50,8 +66,21 @@ export const ProfileManager = ({
 
   const [is_memory_modal_open, set_is_memory_modal_open] = useState(false);
   const [memory_data, set_memory_data] = useState<identity_memory | null>(null);
+  const [memory_profile_id, set_memory_profile_id] = useState<string>("");
   const [memory_profile_name, set_memory_profile_name] = useState("");
   const [is_loading_memory, set_is_loading_memory] = useState(false);
+  const [memory_gate_error, set_memory_gate_error] = useState<string | null>(null);
+
+  const [is_images_modal_open, set_is_images_modal_open] = useState(false);
+  const [images_data, set_images_data] = useState<identity_generated_image[] | null>(null);
+  const [images_profile_name, set_images_profile_name] = useState("");
+  const [is_loading_images, set_is_loading_images] = useState(false);
+  const [images_gate_error, set_images_gate_error] = useState<string | null>(null);
+
+  useEffect(() => {
+    set_memory_gate_error(null);
+    set_images_gate_error(null);
+  }, [recognized_profile_id]);
 
   const can_open_modal = Boolean(is_camera_running && is_models_loaded && !is_busy);
 
@@ -106,23 +135,95 @@ export const ProfileManager = ({
 
   const view_memory = useCallback(async (profile_id: string, profile_name: string) => {
     if (is_loading_memory) return;
+
+    const is_allowed = Boolean(recognized_profile_id && recognized_profile_id === profile_id);
+    if (!is_allowed) {
+      const recognized = recognized_profile_id ? (recognized_label || recognized_profile_id) : "None";
+      set_memory_gate_error(
+        `Memory locked. Currently recognized: ${recognized}. To view ${profile_name}'s memory, their face must be recognized.`
+      );
+      return;
+    }
+
+    set_memory_gate_error(null);
     set_is_loading_memory(true);
+    set_memory_profile_id(profile_id);
     set_memory_profile_name(profile_name);
     set_is_memory_modal_open(true);
     try {
       const memory = await on_view_memory(profile_id);
       set_memory_data(memory);
-    } catch (error) {
+    } catch {
       set_memory_data(null);
     } finally {
       set_is_loading_memory(false);
     }
-  }, [is_loading_memory, on_view_memory]);
+  }, [is_loading_memory, on_view_memory, recognized_label, recognized_profile_id]);
 
   const close_memory_modal = useCallback(() => {
     set_is_memory_modal_open(false);
     set_memory_data(null);
+    set_memory_profile_id("");
     set_memory_profile_name("");
+  }, []);
+
+  const delete_memory_value = useCallback(
+    async (kind: "tag" | "fact" | "preference" | "note", value: string) => {
+      if (is_busy || is_loading_memory) return;
+      if (!memory_profile_id) return;
+
+      const is_allowed = Boolean(recognized_profile_id && recognized_profile_id === memory_profile_id);
+      if (!is_allowed) {
+        const recognized = recognized_profile_id ? (recognized_label || recognized_profile_id) : "None";
+        set_memory_gate_error(
+          `Memory locked. Currently recognized: ${recognized}. To edit memory, the matching face must be recognized.`
+        );
+        return;
+      }
+
+      const updated = await on_delete_memory_item({ profile_id: memory_profile_id, kind, value });
+      if (!updated) {
+        set_memory_gate_error("Failed to update memory.");
+        return;
+      }
+      set_memory_data(updated);
+    },
+    [is_busy, is_loading_memory, memory_profile_id, on_delete_memory_item, recognized_label, recognized_profile_id]
+  );
+
+  const view_images = useCallback(
+    async (profile_id: string, profile_name: string) => {
+      if (is_loading_images) return;
+
+      const is_allowed = Boolean(recognized_profile_id && recognized_profile_id === profile_id);
+      if (!is_allowed) {
+        const recognized = recognized_profile_id ? (recognized_label || recognized_profile_id) : "None";
+        set_images_gate_error(
+          `Images locked. Currently recognized: ${recognized}. To view ${profile_name}'s images, their face must be recognized.`
+        );
+        return;
+      }
+
+      set_images_gate_error(null);
+      set_is_loading_images(true);
+      set_images_profile_name(profile_name);
+      set_is_images_modal_open(true);
+      try {
+        const images = await on_view_generated_images(profile_id);
+        set_images_data(images);
+      } catch {
+        set_images_data(null);
+      } finally {
+        set_is_loading_images(false);
+      }
+    },
+    [is_loading_images, on_view_generated_images, recognized_label, recognized_profile_id]
+  );
+
+  const close_images_modal = useCallback(() => {
+    set_is_images_modal_open(false);
+    set_images_data(null);
+    set_images_profile_name("");
   }, []);
 
   return (
@@ -151,6 +252,8 @@ export const ProfileManager = ({
         </div>
       </div>
 
+      {memory_gate_error ? <p className="mt-2 text-xs text-red-300">{memory_gate_error}</p> : null}
+      {images_gate_error ? <p className="mt-2 text-xs text-red-300">{images_gate_error}</p> : null}
       {error_message ? <p className="mt-2 text-xs text-red-300">{error_message}</p> : null}
 
       {profiles.length === 0 ? (
@@ -180,8 +283,25 @@ export const ProfileManager = ({
                     className="rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 disabled:opacity-50"
                     onClick={() => void view_memory(p.profile_id, p.name)}
                     disabled={is_busy || is_loading_memory}
+                    title={
+                      recognized_profile_id && recognized_profile_id === p.profile_id
+                        ? "View memory"
+                        : "Locked: face must match to view memory"
+                    }
                   >
                     View Memory
+                  </button>
+                  <button
+                    className="rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 disabled:opacity-50"
+                    onClick={() => void view_images(p.profile_id, p.name)}
+                    disabled={is_busy || is_loading_images}
+                    title={
+                      recognized_profile_id && recognized_profile_id === p.profile_id
+                        ? "View generated images"
+                        : "Locked: face must match to view images"
+                    }
+                  >
+                    Images
                   </button>
                   <button
                     className="rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 disabled:opacity-50"
@@ -364,9 +484,19 @@ export const ProfileManager = ({
                     </p>
                     <div className="grid gap-2">
                       {Object.entries(memory_data.tags).map(([key, value]) => (
-                        <div key={key} className="flex items-start gap-2 text-sm">
-                          <span className="text-zinc-400 font-medium">{key}:</span>
-                          <span className="text-zinc-200">{value}</span>
+                        <div key={key} className="flex items-start justify-between gap-3 text-sm">
+                          <div className="flex items-start gap-2">
+                            <span className="text-zinc-400 font-medium">{key}:</span>
+                            <span className="text-zinc-200">{value}</span>
+                          </div>
+                          <button
+                            className="rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-1 text-xs text-zinc-200 disabled:opacity-50"
+                            onClick={() => void delete_memory_value("tag", key)}
+                            disabled={is_busy || is_loading_memory}
+                            type="button"
+                          >
+                            Delete
+                          </button>
                         </div>
                       ))}
                     </div>
@@ -381,9 +511,22 @@ export const ProfileManager = ({
                     </p>
                     <ul className="grid gap-2">
                       {memory_data.facts.map((fact, idx) => (
-                        <li key={idx} className="text-sm text-zinc-200 flex items-start gap-2">
-                          <span className="text-zinc-500 mt-1">•</span>
-                          <span>{fact}</span>
+                        <li
+                          key={idx}
+                          className="text-sm text-zinc-200 flex items-start justify-between gap-3"
+                        >
+                          <div className="flex items-start gap-2">
+                            <span className="text-zinc-500 mt-1">•</span>
+                            <span>{fact}</span>
+                          </div>
+                          <button
+                            className="rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-1 text-xs text-zinc-200 disabled:opacity-50"
+                            onClick={() => void delete_memory_value("fact", fact)}
+                            disabled={is_busy || is_loading_memory}
+                            type="button"
+                          >
+                            Delete
+                          </button>
                         </li>
                       ))}
                     </ul>
@@ -398,9 +541,22 @@ export const ProfileManager = ({
                     </p>
                     <ul className="grid gap-2">
                       {memory_data.preferences.map((pref, idx) => (
-                        <li key={idx} className="text-sm text-zinc-200 flex items-start gap-2">
-                          <span className="text-zinc-500 mt-1">•</span>
-                          <span>{pref}</span>
+                        <li
+                          key={idx}
+                          className="text-sm text-zinc-200 flex items-start justify-between gap-3"
+                        >
+                          <div className="flex items-start gap-2">
+                            <span className="text-zinc-500 mt-1">•</span>
+                            <span>{pref}</span>
+                          </div>
+                          <button
+                            className="rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-1 text-xs text-zinc-200 disabled:opacity-50"
+                            onClick={() => void delete_memory_value("preference", pref)}
+                            disabled={is_busy || is_loading_memory}
+                            type="button"
+                          >
+                            Delete
+                          </button>
                         </li>
                       ))}
                     </ul>
@@ -415,9 +571,22 @@ export const ProfileManager = ({
                     </p>
                     <ul className="grid gap-2">
                       {memory_data.notes.map((note, idx) => (
-                        <li key={idx} className="text-sm text-zinc-200 flex items-start gap-2">
-                          <span className="text-zinc-500 mt-1">•</span>
-                          <span>{note}</span>
+                        <li
+                          key={idx}
+                          className="text-sm text-zinc-200 flex items-start justify-between gap-3"
+                        >
+                          <div className="flex items-start gap-2">
+                            <span className="text-zinc-500 mt-1">•</span>
+                            <span>{note}</span>
+                          </div>
+                          <button
+                            className="rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-1 text-xs text-zinc-200 disabled:opacity-50"
+                            onClick={() => void delete_memory_value("note", note)}
+                            disabled={is_busy || is_loading_memory}
+                            type="button"
+                          >
+                            Delete
+                          </button>
                         </li>
                       ))}
                     </ul>
@@ -440,6 +609,71 @@ export const ProfileManager = ({
             ) : (
               <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-6 text-center">
                 <p className="text-sm text-red-300">Failed to load memory data.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
+
+      {is_images_modal_open ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70" onClick={close_images_modal} />
+          <div
+            className="relative w-full max-w-4xl max-h-[80vh] overflow-y-auto rounded-2xl border border-zinc-800 bg-zinc-950 p-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div className="flex flex-col gap-1">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                  Generated Images
+                </p>
+                <p className="text-sm text-zinc-300">Saved images for {images_profile_name}</p>
+              </div>
+
+              <button
+                className="rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm disabled:opacity-50"
+                onClick={close_images_modal}
+                disabled={is_loading_images}
+              >
+                Close
+              </button>
+            </div>
+
+            {is_loading_images ? (
+              <div className="flex items-center justify-center py-8">
+                <p className="text-sm text-zinc-400">Loading images...</p>
+              </div>
+            ) : Array.isArray(images_data) ? (
+              images_data.length > 0 ? (
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {images_data.map((img) => (
+                    <div
+                      key={img.image_id}
+                      className="rounded-xl border border-zinc-800 bg-zinc-950 p-2"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={img.image_data_url}
+                        alt={img.prompt || "Generated image"}
+                        className="h-48 w-full rounded-lg object-cover"
+                      />
+                      {img.prompt ? (
+                        <p className="mt-2 text-xs text-zinc-300 line-clamp-3">{img.prompt}</p>
+                      ) : null}
+                      {img.created_at ? (
+                        <p className="mt-1 text-[10px] text-zinc-500">{img.created_at}</p>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-6 text-center">
+                  <p className="text-sm text-zinc-400">No generated images saved yet.</p>
+                </div>
+              )
+            ) : (
+              <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-6 text-center">
+                <p className="text-sm text-red-300">Failed to load images.</p>
               </div>
             )}
           </div>

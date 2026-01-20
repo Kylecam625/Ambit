@@ -111,6 +111,9 @@ const create_profiles_router = ({ repo }) => {
         facts: Array.isArray(req.body?.facts) ? req.body.facts : [],
         preferences: Array.isArray(req.body?.preferences) ? req.body.preferences : [],
         notes: Array.isArray(req.body?.notes) ? req.body.notes : [],
+        facts_remove: Array.isArray(req.body?.facts_remove) ? req.body.facts_remove : [],
+        preferences_remove: Array.isArray(req.body?.preferences_remove) ? req.body.preferences_remove : [],
+        notes_remove: Array.isArray(req.body?.notes_remove) ? req.body.notes_remove : [],
         tags_set,
         tags_unset,
       };
@@ -146,6 +149,52 @@ const create_profiles_router = ({ repo }) => {
       });
 
       res.json({ summary: record });
+    } catch (error) {
+      const message = as_error_message(error);
+      const status = message.toLowerCase().includes("not found") ? 404 : 400;
+      res.status(status).json({ error: message });
+    }
+  });
+
+  router.get("/profiles/:profile_id/images", (req, res) => {
+    try {
+      const profile_id = to_string(req.params.profile_id).trim();
+      if (!profile_id) {
+        res.status(400).json({ error: "profile_id is required" });
+        return;
+      }
+
+      const limit = to_int_or_null(req.query?.limit);
+      const images = repo.list_generated_images({ profile_id, limit: limit || 50 });
+      res.json({ images });
+    } catch (error) {
+      res.status(500).json({ error: as_error_message(error) });
+    }
+  });
+
+  router.post("/profiles/:profile_id/images", (req, res) => {
+    try {
+      const profile_id = to_string(req.params.profile_id).trim();
+      if (!profile_id) {
+        res.status(400).json({ error: "profile_id is required" });
+        return;
+      }
+
+      const prompt = to_string(req.body?.prompt).trim();
+      const image_data_url = to_string(req.body?.image_data_url).trim();
+
+      if (!prompt) {
+        res.status(400).json({ error: "prompt is required" });
+        return;
+      }
+
+      if (!image_data_url) {
+        res.status(400).json({ error: "image_data_url is required" });
+        return;
+      }
+
+      const image = repo.add_generated_image({ profile_id, prompt, image_data_url });
+      res.json({ image });
     } catch (error) {
       const message = as_error_message(error);
       const status = message.toLowerCase().includes("not found") ? 404 : 400;

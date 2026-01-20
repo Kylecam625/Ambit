@@ -13,10 +13,18 @@ const safe_parse_json = (raw, fallback) => {
   }
 };
 
+const FACE_DESCRIPTOR_LENGTH = 128;
+
 const normalize_descriptor = (value) => {
   if (!Array.isArray(value)) return null;
-  const arr = value.map((n) => Number(n) || 0);
-  if (arr.length < 32) return null;
+  if (value.length !== FACE_DESCRIPTOR_LENGTH) return null;
+
+  const arr = [];
+  for (const raw of value) {
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return null;
+    arr.push(n);
+  }
   return arr;
 };
 
@@ -67,6 +75,17 @@ const normalize_memory_row = (row) => {
   return { tags, facts, preferences, notes };
 };
 
+const normalize_generated_image_row = (row) => {
+  if (!row) return null;
+  return {
+    image_id: to_string(row.image_id).trim(),
+    profile_id: to_string(row.profile_id).trim(),
+    prompt: to_string(row.prompt).trim(),
+    image_data_url: to_string(row.image_data_url).trim(),
+    created_at: to_string(row.created_at).trim(),
+  };
+};
+
 const merge_memory = ({ current, patch }) => {
   const current_tags = is_record(current?.tags) ? current.tags : {};
   const next_tags = { ...current_tags };
@@ -89,14 +108,28 @@ const merge_memory = ({ current, patch }) => {
   const tags_entries = Object.entries(next_tags).slice(0, MAX_TAGS);
   const normalized_tags = Object.fromEntries(tags_entries);
 
+  const remove_set = (arr) => {
+    const normalized = uniq_strings(Array.isArray(arr) ? arr : [])
+      .map((v) => to_string(v).trim())
+      .filter(Boolean);
+    return new Set(normalized);
+  };
+
+  const facts_remove_set = remove_set(patch?.facts_remove);
+  const preferences_remove_set = remove_set(patch?.preferences_remove);
+  const notes_remove_set = remove_set(patch?.notes_remove);
+
   const next = {
     tags: normalized_tags,
-    facts: uniq_strings([...(current?.facts || []), ...(patch?.facts || [])]).slice(0, MAX_MEMORY_ITEMS_PER_BUCKET),
-    preferences: uniq_strings([...(current?.preferences || []), ...(patch?.preferences || [])]).slice(
-      0,
-      MAX_MEMORY_ITEMS_PER_BUCKET
-    ),
-    notes: uniq_strings([...(current?.notes || []), ...(patch?.notes || [])]).slice(0, MAX_MEMORY_ITEMS_PER_BUCKET),
+    facts: uniq_strings([...(current?.facts || []), ...(patch?.facts || [])])
+      .filter((s) => !facts_remove_set.has(to_string(s).trim()))
+      .slice(0, MAX_MEMORY_ITEMS_PER_BUCKET),
+    preferences: uniq_strings([...(current?.preferences || []), ...(patch?.preferences || [])])
+      .filter((s) => !preferences_remove_set.has(to_string(s).trim()))
+      .slice(0, MAX_MEMORY_ITEMS_PER_BUCKET),
+    notes: uniq_strings([...(current?.notes || []), ...(patch?.notes || [])])
+      .filter((s) => !notes_remove_set.has(to_string(s).trim()))
+      .slice(0, MAX_MEMORY_ITEMS_PER_BUCKET),
   };
   return next;
 };
@@ -175,6 +208,23 @@ const create_repo = ({ db }) => {
   `
   );
 
+  const insert_generated_image = db.prepare(
+    `
+    INSERT INTO generated_images (image_id, profile_id, prompt, image_data_url, created_at)
+    VALUES (@image_id, @profile_id, @prompt, @image_data_url, @created_at)
+  `
+  );
+
+  const list_generated_images = db.prepare(
+    `
+    SELECT image_id, profile_id, prompt, image_data_url, created_at
+    FROM generated_images
+    WHERE profile_id = ?
+    ORDER BY created_at DESC
+    LIMIT ?
+  `
+  );
+
   const tx = db.transaction((fn) => fn());
 
   return {
@@ -245,7 +295,7 @@ const create_repo = ({ db }) => {
     add_enrollment({ profile_id, descriptor, image_data_url }) {
       const normalized_descriptor = normalize_descriptor(descriptor);
       if (!normalized_descriptor) {
-        throw new Error("Invalid descriptor");
+        throw new Error(`Invalid descriptor (expected ${FACE_DESCRIPTOR_LENGTH} finite numbers)`);
       }
 
       const created_at = now_iso();
@@ -310,6 +360,48 @@ const create_repo = ({ db }) => {
         touch_profile.run({ profile_id, updated_at: created_at });
         return record;
       });
+    },
+
+    add_generated_image({ profile_id, prompt, image_data_url }) {
+      const created_at = now_iso();
+      const record = {
+        image_id: uuid(),
+        profile_id: to_string(profile_id).trim(),
+        prompt: to_string(prompt).trim(),
+        image_data_url: to_string(image_data_url).trim(),
+        created_at,
+      };
+
+      if (!record.profile_id) {
+        throw new Error("Profile not found");
+      }
+      if (!record.prompt) {
+        throw new Error("prompt is required");
+      }
+      if (!record.image_data_url) {
+        throw new Error("image_data_url is required");
+      }
+
+      return tx(() => {
+        const profile = get_profile.get(record.profile_id);
+        if (!profile) throw new Error("Profile not found");
+
+        insert_generated_image.run(record);
+        touch_profile.run({ profile_id: record.profile_id, updated_at: created_at });
+
+        return normalize_generated_image_row(record);
+      });
+    },
+
+    list_generated_images({ profile_id, limit = 50 }) {
+      const normalized_profile_id = to_string(profile_id).trim();
+      if (!normalized_profile_id) return [];
+
+      const parsed_limit = to_int_or_null(limit);
+      const safe_limit = parsed_limit && parsed_limit > 0 ? Math.min(parsed_limit, 200) : 50;
+
+      const rows = list_generated_images.all(normalized_profile_id, safe_limit);
+      return rows.map(normalize_generated_image_row).filter(Boolean);
     },
   };
 };

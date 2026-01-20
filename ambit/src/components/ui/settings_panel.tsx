@@ -1,7 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { ProfileManager } from "@/components/identity/profile_manager";
 import { VoicePicker } from "@/components/ui/voice_picker";
+import type {
+  identity_profile_summary,
+  identity_memory,
+  identity_generated_image,
+} from "@/lib/identity/identity_types";
 
 type SettingsPanelProps = {
   is_loading_mics: boolean;
@@ -16,6 +22,34 @@ type SettingsPanelProps = {
   selected_voice_id: string | null;
   voice_error: string | null;
   voice_options: Array<{ voice_id: string; name: string; preview_url: string | null }>;
+
+  // Identity / Profiles
+  profiles: identity_profile_summary[];
+  recognized_profile_id: string | null;
+  recognized_label: string;
+  is_identity_camera_running: boolean;
+  is_identity_models_loaded: boolean;
+  is_identity_busy: boolean;
+  identity_error_message: string | null;
+  on_identity_refresh: () => void;
+  on_identity_delete_profile: (args: { profile_id: string; name: string }) => void;
+  on_identity_create_profile: (args: {
+    name: string;
+    age: number | null;
+    interests: string;
+    enrollment_descriptors: number[][];
+    enrollment_thumbnails: Array<string | null>;
+  }) => void;
+  on_identity_capture_enrollment: () => Promise<{ descriptor: number[]; thumbnail: string | null } | null>;
+  on_identity_view_memory: (profile_id: string) => Promise<identity_memory | null>;
+  on_identity_view_generated_images: (
+    profile_id: string
+  ) => Promise<identity_generated_image[] | null>;
+  on_identity_delete_memory_item: (args: {
+    profile_id: string;
+    kind: "tag" | "fact" | "preference" | "note";
+    value: string;
+  }) => Promise<identity_memory | null>;
 };
 
 export const SettingsPanel = ({
@@ -31,9 +65,24 @@ export const SettingsPanel = ({
   selected_voice_id,
   voice_error,
   voice_options,
+  profiles,
+  recognized_profile_id,
+  recognized_label,
+  is_identity_camera_running,
+  is_identity_models_loaded,
+  is_identity_busy,
+  identity_error_message,
+  on_identity_refresh,
+  on_identity_delete_profile,
+  on_identity_create_profile,
+  on_identity_capture_enrollment,
+  on_identity_view_memory,
+  on_identity_view_generated_images,
+  on_identity_delete_memory_item,
 }: SettingsPanelProps) => {
   const [is_open, set_is_open] = useState(false);
   const [is_voice_picker_open, set_is_voice_picker_open] = useState(false);
+  const [is_profiles_open, set_is_profiles_open] = useState(false);
 
   const selected_mic_label =
     mic_devices.find((device) => device.device_id === selected_mic_id)?.label ??
@@ -191,9 +240,79 @@ export const SettingsPanel = ({
                 voices={voice_options}
               />
             </div>
+
+            {/* Profiles */}
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                Profiles
+              </label>
+              <p className="text-xs text-zinc-400">{profiles.length} total</p>
+              <button
+                className="rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-2 text-left text-sm font-semibold text-zinc-200 hover:border-zinc-600 disabled:opacity-50"
+                onClick={() => {
+                  set_is_open(false);
+                  set_is_profiles_open(true);
+                }}
+                disabled={is_disabled}
+                type="button"
+              >
+                Manage Profiles
+              </button>
+            </div>
           </div>
         </div>
       )}
+
+      {/* Profiles Modal */}
+      {is_profiles_open ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/70"
+            onClick={() => set_is_profiles_open(false)}
+          />
+          <div
+            className="relative w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-2xl border border-zinc-800 bg-zinc-950 p-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex flex-col gap-1">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                  Profiles
+                </p>
+                <p className="text-sm text-zinc-300">Manage profiles and enrollments.</p>
+              </div>
+
+              <button
+                className="rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 disabled:opacity-50"
+                onClick={() => set_is_profiles_open(false)}
+                disabled={is_identity_busy}
+                type="button"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-4">
+              <ProfileManager
+                profiles={profiles}
+                is_camera_running={is_identity_camera_running}
+                is_models_loaded={is_identity_models_loaded}
+                is_busy={is_identity_busy}
+                error_message={identity_error_message}
+                recognized_profile_id={recognized_profile_id}
+                recognized_label={recognized_label}
+                on_refresh={on_identity_refresh}
+                on_delete_profile={on_identity_delete_profile}
+                on_create_profile={on_identity_create_profile}
+                on_capture_enrollment={on_identity_capture_enrollment}
+                on_view_memory={on_identity_view_memory}
+                on_view_generated_images={on_identity_view_generated_images}
+                on_delete_memory_item={on_identity_delete_memory_item}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };

@@ -80,3 +80,49 @@ export const capture_thumbnail_data_url = ({
   }
 };
 
+export const capture_frame_data_url = ({
+  video_el,
+  max_size = 512,
+  mime = "image/jpeg",
+  quality = 0.8,
+  mirror = true,
+}: {
+  video_el: HTMLVideoElement;
+  max_size?: number;
+  mime?: "image/jpeg" | "image/png";
+  quality?: number;
+  mirror?: boolean;
+}) => {
+  const vw = video_el.videoWidth || 0;
+  const vh = video_el.videoHeight || 0;
+  if (!vw || !vh) return null;
+
+  const scale = max_size / Math.max(vw, vh);
+  const w = clamp(Math.round(vw * scale), 1, max_size);
+  const h = clamp(Math.round(vh * scale), 1, max_size);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+
+  if (mirror) {
+    ctx.save();
+    ctx.translate(w, 0);
+    ctx.scale(-1, 1);
+  }
+
+  ctx.drawImage(video_el, 0, 0, w, h);
+
+  if (mirror) {
+    ctx.restore();
+  }
+
+  try {
+    return canvas.toDataURL(mime, quality);
+  } catch {
+    return null;
+  }
+};
+

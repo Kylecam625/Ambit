@@ -1,12 +1,41 @@
 import { ensure_faceapi } from "./faceapi_browser";
 
+type record_value = Record<string, unknown>;
+const is_record = (value: unknown): value is record_value => typeof value === "object" && value !== null;
+const to_number_or_null = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) ? value : null;
+
+type face_matcher_like = { findBestMatch: (descriptor: Float32Array) => unknown };
+
+type faceapi_runtime = {
+  // Detection
+  TinyFaceDetectorOptions: new (args: { inputSize: number; scoreThreshold: number }) => unknown;
+  detectSingleFace: (
+    input: HTMLVideoElement,
+    options: unknown
+  ) => { withFaceLandmarks: () => { withFaceDescriptor: () => Promise<unknown> } };
+
+  // Recognition / matching
+  LabeledFaceDescriptors: new (label: string, descriptors: Float32Array[]) => unknown;
+  FaceMatcher: new (labeled: unknown[], threshold: number) => face_matcher_like;
+};
+
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
 
-const to_float32 = (value: number[]): Float32Array | null => {
+const FACE_DESCRIPTOR_LENGTH = 128;
+
+const to_float32 = (value: unknown): Float32Array | null => {
   if (!Array.isArray(value)) return null;
-  if (value.length < 32) return null;
-  return new Float32Array(value.map((n) => (Number.isFinite(n) ? n : 0)));
+  if (value.length !== FACE_DESCRIPTOR_LENGTH) return null;
+
+  const out = new Float32Array(FACE_DESCRIPTOR_LENGTH);
+  for (let i = 0; i < FACE_DESCRIPTOR_LENGTH; i += 1) {
+    const n = Number(value[i]);
+    if (!Number.isFinite(n)) return null;
+    out[i] = n;
+  }
+  return out;
 };
 
 export type identity_match_profile = {
@@ -22,7 +51,7 @@ export const build_face_matcher = async ({
   profiles: identity_match_profile[];
   distance_threshold: number;
 }) => {
-  const faceapi = await ensure_faceapi();
+  const faceapi = (await ensure_faceapi()) as faceapi_runtime;
   const threshold = clamp(distance_threshold || 0.45, 0.3, 0.9);
 
   const labeled = profiles
@@ -51,9 +80,9 @@ export const detect_single_face_descriptor = async ({
   input_size?: number;
   score_threshold?: number;
 }) => {
-  const faceapi = await ensure_faceapi();
+  const faceapi = (await ensure_faceapi()) as faceapi_runtime;
 
-  const result = await faceapi
+  const raw_result = await faceapi
     .detectSingleFace(
       video_el,
       new faceapi.TinyFaceDetectorOptions({
@@ -64,11 +93,14 @@ export const detect_single_face_descriptor = async ({
     .withFaceLandmarks()
     .withFaceDescriptor();
 
-  if (!result) return null;
+  if (!raw_result) return null;
+  if (!is_record(raw_result)) return null;
+  const descriptor = raw_result["descriptor"];
+  if (!(descriptor instanceof Float32Array)) return null;
 
   return {
-    descriptor: result.descriptor as Float32Array,
-    detection: result,
+    descriptor,
+    detection: raw_result,
   };
 };
 
@@ -76,22 +108,36 @@ export const match_face_descriptor = async ({
   face_matcher,
   descriptor,
 }: {
-  face_matcher: any;
+  face_matcher: unknown;
   descriptor: Float32Array;
 }) => {
-  if (!face_matcher || typeof face_matcher.findBestMatch !== "function") {
+  const has_find_best_match =
+    is_record(face_matcher) && typeof face_matcher["findBestMatch"] === "function";
+  if (!has_find_best_match) {
     return { profile_id: null as string | null, distance: null as number | null };
   }
 
-  const best = face_matcher.findBestMatch(descriptor);
-  const label = typeof best?.label === "string" ? best.label : "unknown";
-  const distance = typeof best?.distance === "number" ? best.distance : null;
+  const best = (face_matcher as face_matcher_like).findBestMatch(descriptor);
+  const best_record = is_record(best) ? best : null;
+  const label = typeof best_record?.label === "string" ? best_record.label : "unknown";
+  const distance = typeof best_record?.distance === "number" ? best_record.distance : null;
 
   if (!label || label === "unknown") {
     return { profile_id: null, distance };
   }
 
   return { profile_id: label, distance };
+};
+
+type detection_box = { x: number; y: number; width: number; height: number };
+const to_box = (value: unknown): detection_box | null => {
+  if (!is_record(value)) return null;
+  const x = to_number_or_null(value["x"]);
+  const y = to_number_or_null(value["y"]);
+  const width = to_number_or_null(value["width"]);
+  const height = to_number_or_null(value["height"]);
+  if (x === null || y === null || width === null || height === null) return null;
+  return { x, y, width, height };
 };
 
 export const draw_face_overlay = async ({
@@ -103,7 +149,7 @@ export const draw_face_overlay = async ({
 }: {
   canvas_el: HTMLCanvasElement;
   video_el: HTMLVideoElement;
-  detection: any;
+  detection: unknown;
   label: string;
   mirror?: boolean;
 }) => {
@@ -124,11 +170,19 @@ export const draw_face_overlay = async ({
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, cw, ch);
 
-  const box = detection?.detection?.box || detection?.box;
+  const outer = is_record(detection) ? detection : null;
+  const inner = outer && is_record(outer["detection"]) ? (outer["detection"] as record_value) : null;
+  const box = to_box((inner ? inner["box"] : null) ?? (outer ? outer["box"] : null));
   if (!box) return;
 
-  const source_w = detection?.detection?.imageWidth || detection?.imageWidth || vw;
-  const source_h = detection?.detection?.imageHeight || detection?.imageHeight || vh;
+  const source_w =
+    to_number_or_null(inner ? inner["imageWidth"] : null) ??
+    to_number_or_null(outer ? outer["imageWidth"] : null) ??
+    vw;
+  const source_h =
+    to_number_or_null(inner ? inner["imageHeight"] : null) ??
+    to_number_or_null(outer ? outer["imageHeight"] : null) ??
+    vh;
   const scale_to_video_x = source_w ? vw / source_w : 1;
   const scale_to_video_y = source_h ? vh / source_h : 1;
   const box_x = (typeof box.x === "number" ? box.x : 0) * scale_to_video_x;

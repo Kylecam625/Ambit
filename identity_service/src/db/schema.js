@@ -39,6 +39,17 @@ CREATE TABLE IF NOT EXISTS conversation_summaries (
 
 CREATE INDEX IF NOT EXISTS idx_conversation_summaries_profile_id ON conversation_summaries(profile_id);
 CREATE INDEX IF NOT EXISTS idx_conversation_summaries_conversation_id ON conversation_summaries(conversation_id);
+
+CREATE TABLE IF NOT EXISTS generated_images (
+  image_id TEXT PRIMARY KEY,
+  profile_id TEXT NOT NULL,
+  prompt TEXT NOT NULL,
+  image_data_url TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (profile_id) REFERENCES profiles(profile_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_generated_images_profile_id ON generated_images(profile_id);
 `;
 
 const ensure_schema = (db) => {

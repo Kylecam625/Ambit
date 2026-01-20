@@ -25,6 +25,11 @@ type conversation_message = {
   content: string;
 };
 
+type ui_event = {
+  type: string;
+  [key: string]: unknown;
+};
+
 const MAX_CONVERSATION_MESSAGES = 50;
 const MAX_CONVERSATION_MESSAGE_CHARS = 2000;
 const is_record = (value: unknown): value is Record<string, unknown> =>
@@ -34,8 +39,10 @@ void MAX_CONVERSATION_MESSAGE_CHARS;
 
 export const useRealtimeStt = ({
   profile_id = null,
+  capture_camera_frame = null,
 }: {
   profile_id?: string | null;
+  capture_camera_frame?: (() => Promise<string | null>) | null;
 } = {}) => {
   console.log(`[useRealtimeStt] Hook called with profile_id: ${profile_id}`);
   
@@ -92,6 +99,7 @@ export const useRealtimeStt = ({
   const [voice_error, set_voice_error] = useState<string | null>(null);
   const [transcript, set_transcript] = useState("");
   const [response_text, set_response_text] = useState("");
+  const [ui_events, set_ui_events] = useState<ui_event[]>([]);
   const [error_message, set_error_message] = useState<string | null>(null);
   const [response_error, set_response_error] = useState<string | null>(null);
   const [conversation_history, set_conversation_history] = useState<
@@ -451,6 +459,7 @@ export const useRealtimeStt = ({
       set_is_responding(true);
       set_response_error(null);
       set_response_text("");
+      set_ui_events([]);
       last_spoken_text_ref.current = "";
       response_abort_ref.current?.abort();
       const abort_controller = new AbortController();
@@ -509,6 +518,98 @@ export const useRealtimeStt = ({
           return;
         }
 
+        const tool_request = is_record(data?.tool_request) ? data.tool_request : null;
+
+        if (tool_request) {
+          const tool_name = typeof tool_request["name"] === "string" ? tool_request["name"] : "";
+          const call_id = typeof tool_request["call_id"] === "string" ? tool_request["call_id"] : "";
+          const tool_arguments = is_record(tool_request["arguments"]) ? tool_request["arguments"] : {};
+
+          if (tool_name !== "analyze_camera_frame") {
+            throw new Error(`Unsupported tool request: ${tool_name || "unknown"}`);
+          }
+          if (!call_id) {
+            throw new Error("Tool request missing call_id");
+          }
+          if (!capture_camera_frame) {
+            throw new Error("Camera capture is not available");
+          }
+
+          const image_data_url = await capture_camera_frame();
+          if (!image_data_url) {
+            throw new Error("Camera frame not ready. Try again in a moment.");
+          }
+
+          const pending_response_id =
+            typeof data?.response_id === "string" ? data.response_id : "";
+          const pending_conversation_id =
+            typeof data?.conversation_id === "string" ? data.conversation_id : "";
+
+          const tool_response = await fetch("/api/realtime/tool", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              tool_name: tool_name,
+              call_id,
+              tool_arguments,
+              image_data_url,
+              previous_response_id: pending_response_id || null,
+              conversation_id: pending_conversation_id || null,
+              text: trimmed,
+              history: current_history.slice(-MAX_CONVERSATION_MESSAGES),
+              profile_id: current_profile_id,
+              message_seq: next_message_seq,
+            }),
+            signal: abort_controller.signal,
+          });
+
+          const tool_data = await tool_response.json().catch(() => null);
+
+          if (!tool_response.ok) {
+            const message =
+              typeof tool_data?.error === "string" ? tool_data.error : "Tool execution failed";
+            throw new Error(message);
+          }
+
+          if (response_request_id_ref.current !== request_id) {
+            return;
+          }
+
+          const next_response =
+            typeof tool_data?.speech_text === "string"
+              ? tool_data.speech_text
+              : typeof tool_data?.response === "string"
+                ? tool_data.response
+                : "";
+          const updated_history = Array.isArray(tool_data?.history) ? tool_data.history : [];
+          const next_ui_events = Array.isArray(tool_data?.ui_events) ? tool_data.ui_events : [];
+          const response_id =
+            typeof tool_data?.response_id === "string" ? tool_data.response_id : "";
+          const next_conversation_id =
+            typeof tool_data?.conversation_id === "string" ? tool_data.conversation_id : "";
+
+          set_response_text(next_response);
+          set_ui_events(next_ui_events);
+          set_conversation_history(updated_history);
+          conversation_history_ref.current = updated_history;
+
+          if (response_id) {
+            set_previous_response_id(response_id);
+            previous_response_id_ref.current = response_id;
+          }
+          if (next_conversation_id) {
+            set_conversation_id(next_conversation_id);
+            conversation_id_ref.current = next_conversation_id;
+          }
+
+          console.log(
+            `[Client] ✓ Tool response successful! Updating message_seq: ${current_message_seq} → ${next_message_seq}`
+          );
+          message_seq_ref.current = next_message_seq;
+          set_message_seq(next_message_seq);
+          return;
+        }
+
         const next_response =
           typeof data?.speech_text === "string"
             ? data.speech_text
@@ -516,11 +617,13 @@ export const useRealtimeStt = ({
               ? data.response
               : "";
         const updated_history = Array.isArray(data?.history) ? data.history : [];
+        const next_ui_events = Array.isArray(data?.ui_events) ? data.ui_events : [];
         const response_id = typeof data?.response_id === "string" ? data.response_id : "";
         const next_conversation_id =
           typeof data?.conversation_id === "string" ? data.conversation_id : "";
 
         set_response_text(next_response);
+        set_ui_events(next_ui_events);
         set_conversation_history(updated_history);
         conversation_history_ref.current = updated_history;
 
@@ -556,7 +659,7 @@ export const useRealtimeStt = ({
         }
       }
     },
-    []
+    [capture_camera_frame]
   );
 
   const handle_realtime_event = useCallback(
@@ -667,6 +770,7 @@ export const useRealtimeStt = ({
     cancel_response();
     set_transcript("");
     set_response_text("");
+    set_ui_events([]);
     set_error_message(null);
     set_response_error(null);
     is_speaking_ref.current = false;
@@ -679,6 +783,7 @@ export const useRealtimeStt = ({
     cancel_response();
     set_transcript("");
     set_response_text("");
+    set_ui_events([]);
     set_error_message(null);
     set_response_error(null);
     is_speaking_ref.current = false;
@@ -720,6 +825,7 @@ export const useRealtimeStt = ({
     reset_conversation,
     response_error,
     response_text,
+    ui_events,
     select_voice,
     select_mic,
     selected_mic_id,
