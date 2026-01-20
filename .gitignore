@@ -1,0 +1,32 @@
+# Secrets / local env
+.env
+.env.*
+
+# Docs (per request: do not upload markdown files)
+*.md
+
+# Node / JS
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Next.js / web builds
+.next/
+out/
+build/
+dist/
+coverage/
+.vercel/
+
+# Local tooling
+.cursor/
+.DS_Store
+
+# Local data / DB files
+data/
+*.db
+*.db-shm
+*.db-wal
+

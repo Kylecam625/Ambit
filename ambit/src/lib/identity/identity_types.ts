@@ -1,0 +1,50 @@
+export type identity_profile_summary = {
+  profile_id: string;
+  name: string;
+  age: number | null;
+  interests: string;
+  created_at: string;
+  updated_at: string;
+  descriptor_count: number;
+};
+
+export type identity_enrollment = {
+  enrollment_id: string;
+  descriptor: number[];
+  image_data_url: string | null;
+  created_at: string;
+};
+
+export type identity_memory = {
+  tags: Record<string, string>;
+  facts: string[];
+  preferences: string[];
+  notes: string[];
+};
+
+export type identity_conversation_summary = {
+  summary_id: string;
+  profile_id: string;
+  conversation_id: string | null;
+  summary: string;
+  started_at: string | null;
+  ended_at: string | null;
+  created_at: string;
+};
+
+export type identity_profile = {
+  profile_id: string;
+  name: string;
+  age: number | null;
+  interests: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type identity_profile_bundle = {
+  profile: identity_profile;
+  enrollments: identity_enrollment[];
+  memory: identity_memory;
+  conversation_summaries: identity_conversation_summary[];
+};
+

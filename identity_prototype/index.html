@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Identity Prototype</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0a0a0b;
+        --panel: #121216;
+        --muted: #9aa1aa;
+        --text: #e8eaed;
+        --border: #2a2b31;
+        --accent: #7c5cff;
+        --danger: #ff4d4d;
+        --ok: #2fe3a6;
+        --warn: #ffc14a;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          Segoe UI,
+          Roboto,
+          Helvetica,
+          Arial,
+          "Apple Color Emoji",
+          "Segoe UI Emoji";
+        background: radial-gradient(1200px 900px at 20% -10%, #1e1b4b33, transparent),
+          var(--bg);
+        color: var(--text);
+      }
+
+      .page {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 24px;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 16px;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      header h1 {
+        font-size: 18px;
+        font-weight: 700;
+        margin: 0;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .card {
+        background: linear-gradient(180deg, #15151b, #101014);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 14px;
+        box-shadow: 0 10px 50px #0000004d;
+      }
+
+      .row {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .stack {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      label {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      input[type="text"],
+      input[type="number"],
+      textarea {
+        width: 100%;
+        background: #0e0e12;
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px 10px;
+        outline: none;
+      }
+
+      textarea {
+        min-height: 68px;
+        resize: vertical;
+      }
+
+      button {
+        appearance: none;
+        background: #0f0f14;
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 10px 12px;
+        cursor: pointer;
+        font-weight: 600;
+      }
+
+      button.primary {
+        background: linear-gradient(180deg, #7c5cff, #5b3bff);
+        border-color: #6c53ff;
+      }
+
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      .pill {
+        font-size: 12px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        color: var(--muted);
+        background: #0e0e12;
+      }
+
+      .pill.ok {
+        color: var(--ok);
+        border-color: #1e3b2d;
+      }
+
+      .pill.bad {
+        color: var(--danger);
+        border-color: #3a1a1f;
+      }
+
+      .status {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 8px;
+      }
+
+      .status .line {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        font-size: 13px;
+      }
+
+      .status .line .k {
+        color: var(--muted);
+      }
+
+      .status .line .v.ok {
+        color: var(--ok);
+      }
+      .status .line .v.warn {
+        color: var(--warn);
+      }
+      .status .line .v.bad {
+        color: var(--danger);
+      }
+
+      .video_wrap {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 16 / 10;
+        background: #06060a;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        overflow: hidden;
+      }
+
+      video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transform: scaleX(-1);
+      }
+
+      canvas {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+
+      .muted {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .modal {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        z-index: 100;
+      }
+
+      .modal[hidden] {
+        display: none;
+      }
+
+      .modal_backdrop {
+        position: absolute;
+        inset: 0;
+        background: rgba(6, 6, 10, 0.7);
+        backdrop-filter: blur(6px);
+      }
+
+      .modal_panel {
+        position: relative;
+        width: min(420px, 92vw);
+        z-index: 1;
+      }
+
+      body.modal-open {
+        overflow: hidden;
+      }
+
+      body.modal-open .page {
+        filter: blur(6px);
+      }
+
+      .profile_card {
+        background: #0e0e12;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 12px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .profile_info {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 0;
+      }
+
+      .profile_name {
+        font-weight: 600;
+        font-size: 14px;
+      }
+
+      .profile_details {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .delete_btn {
+        padding: 6px 10px;
+        font-size: 12px;
+        background: #3a1a1f;
+        border-color: var(--danger);
+        color: var(--danger);
+      }
+
+      .delete_btn:hover {
+        background: #4a2a2f;
+      }
+
+      .enrollment_preview_wrap {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 4 / 3;
+        background: #06060a;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+      }
+
+      #enrollment_preview {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .enrollment_instruction {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(10, 10, 11, 0.85);
+        backdrop-filter: blur(4px);
+        padding: 12px 20px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--ok);
+        text-align: center;
+        pointer-events: none;
+      }
+
+      .enrollment_thumbnails {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+      }
+
+      .thumbnail_slot {
+        aspect-ratio: 1;
+        background: #0e0e12;
+        border: 2px dashed var(--border);
+        border-radius: 8px;
+        display: grid;
+        place-items: center;
+        font-size: 24px;
+        font-weight: 700;
+        color: var(--muted);
+        overflow: hidden;
+      }
+
+      .thumbnail_slot.captured {
+        border-style: solid;
+        border-color: var(--ok);
+      }
+
+      .thumbnail_slot canvas {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      input[type="range"] {
+        appearance: none;
+        height: 6px;
+        background: linear-gradient(to right, #2fe3a6, #ffc14a, #ff4d4d);
+        border-radius: 3px;
+        outline: none;
+      }
+
+      input[type="range"]::-webkit-slider-thumb {
+        appearance: none;
+        width: 16px;
+        height: 16px;
+        background: var(--text);
+        border: 2px solid var(--border);
+        border-radius: 50%;
+        cursor: pointer;
+      }
+
+      input[type="range"]::-moz-range-thumb {
+        width: 16px;
+        height: 16px;
+        background: var(--text);
+        border: 2px solid var(--border);
+        border-radius: 50%;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header>
+        <div class="row">
+          <h1>Identity Prototype</h1>
+          <span class="pill" id="build_pill">standalone</span>
+        </div>
+        <span class="pill" id="connection_pill">offline</span>
+      </header>
+
+      <section class="card stack">
+        <div class="row" style="justify-content: space-between">
+          <div class="row">
+            <strong style="font-size: 14px">Camera</strong>
+            <span class="pill" id="camera_state_pill">stopped</span>
+          </div>
+          <div class="row">
+            <button id="start_camera_btn" class="primary">Start</button>
+            <button id="stop_camera_btn">Stop</button>
+          </div>
+        </div>
+
+        <div class="video_wrap">
+          <video id="video" playsinline muted></video>
+          <canvas id="overlay"></canvas>
+        </div>
+
+        <div class="card status" style="background: #0c0c10">
+          <div class="line">
+            <span class="k">Models</span>
+            <span class="v" id="models_state">not loaded</span>
+          </div>
+          <div class="line">
+            <span class="k">Detected</span>
+            <span class="v" id="detected_state">no</span>
+          </div>
+          <div class="line">
+            <span class="k">Recognized</span>
+            <span class="v" id="recognized_state">Unknown</span>
+          </div>
+          <div class="line">
+            <span class="k">Threshold</span>
+            <span class="v" id="threshold_value">0.45</span>
+          </div>
+          <div style="padding-top: 8px">
+            <input 
+              type="range" 
+              id="threshold_slider" 
+              min="0.3" 
+              max="0.7" 
+              step="0.05" 
+              value="0.45"
+              style="width: 100%"
+            />
+            <div style="display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); margin-top: 4px">
+              <span>Loose (0.3)</span>
+              <span>Strict (0.7)</span>
+            </div>
+          </div>
+        </div>
+
+        <p class="muted">
+          Profiles load from identity_service at <span id="base_url_label"></span>
+        </p>
+      </section>
+
+      <section class="card stack">
+        <div class="row" style="justify-content: space-between; align-items: center">
+          <strong style="font-size: 14px">Profiles</strong>
+          <span class="pill" id="profile_count">0</span>
+        </div>
+        <div id="profiles_list" class="stack" style="gap: 8px">
+          <p class="muted">No profiles loaded</p>
+        </div>
+      </section>
+    </div>
+
+    <div id="profile_modal" class="modal" hidden>
+      <div class="modal_backdrop" id="modal_backdrop"></div>
+      <div class="modal_panel card stack">
+        <strong style="font-size: 16px">Create profile</strong>
+        <p class="muted">
+          Enter your name and capture 3 different angles for better recognition.
+        </p>
+        
+        <div class="stack" style="gap: 6px">
+          <label for="modal_name">Name</label>
+          <input id="modal_name" type="text" placeholder="Your name" />
+        </div>
+        
+        <div class="stack" style="gap: 6px">
+          <label for="modal_age">Age (optional)</label>
+          <input id="modal_age" type="number" min="0" max="130" step="1" placeholder="25" />
+        </div>
+        
+        <div class="stack" style="gap: 6px">
+          <label for="modal_interests">Interests (optional)</label>
+          <textarea id="modal_interests" placeholder="Gaming, AI, space..."></textarea>
+        </div>
+        
+        <div class="stack" style="gap: 8px">
+          <label>Face Captures (<span id="capture_count">0</span>/3)</label>
+          
+          <div class="enrollment_preview_wrap">
+            <canvas id="enrollment_preview"></canvas>
+            <div id="enrollment_instruction" class="enrollment_instruction">
+              Click capture to start
+            </div>
+          </div>
+          
+          <button id="modal_capture_btn" class="primary">📷 Capture Face</button>
+          
+          <div class="enrollment_thumbnails" id="enrollment_thumbnails">
+            <div class="thumbnail_slot" data-slot="0">1</div>
+            <div class="thumbnail_slot" data-slot="1">2</div>
+            <div class="thumbnail_slot" data-slot="2">3</div>
+          </div>
+        </div>
+        
+        <div class="row" style="justify-content: flex-end; gap: 8px">
+          <button id="modal_cancel_btn">Cancel</button>
+          <button id="modal_create_btn" class="primary" disabled>Create Profile</button>
+        </div>
+      </div>
+    </div>
+
+    <script defer src="https://cdn.jsdelivr.net/npm/face-api.js/dist/face-api.min.js"></script>
+    <script type="module" src="./src/ui.js"></script>
+  </body>
+</html>
