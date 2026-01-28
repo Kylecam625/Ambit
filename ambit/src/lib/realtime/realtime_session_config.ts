@@ -27,6 +27,7 @@ export const build_realtime_transcription_session = () => ({
       },
       transcription: {
         model: REALTIME_TRANSCRIPTION_MODEL,
+        prompt: "Hi Ambit, how are you? Ambit is a friendly AI assistant.",
       },
       turn_detection: {
         ...REALTIME_SEMANTIC_VAD,

@@ -205,7 +205,7 @@ export const create_openai_response = async ({
     model: "gpt-4o-mini",
     instructions,
     input: openai_input,
-    tools: [OPENAI_DOCS_MCP_TOOL],
+    tools: [{ type: "web_search" }, OPENAI_DOCS_MCP_TOOL],
   };
 
   const response = await openai_responses_create({ openai, payload });
@@ -286,7 +286,7 @@ export const create_openai_response_with_tools = async ({
     model: "gpt-4o-mini",
     instructions,
     input: input_with_history,
-    tools: ambit_tools,
+    tools: [{ type: "web_search" }, ...ambit_tools],
     tool_choice: forced_tool_name
       ? { type: "function", name: forced_tool_name }
       : "auto",
@@ -368,7 +368,7 @@ export const continue_openai_response_with_tool_output = async ({
         output: output_string,
       },
     ],
-    tools: ambit_tools,
+    tools: [{ type: "web_search" }, ...ambit_tools],
     tool_choice: "auto",
   };
 
