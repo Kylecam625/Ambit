@@ -2,10 +2,10 @@ import type OpenAI from "openai";
 import {
   DEVELOPER_PROMPT,
   MAX_CONVERSATION_MESSAGE_CHARS,
-  OPENAI_DOCS_MCP_TOOL,
   SYSTEM_PROMPT,
 } from "./openai_constants";
 import { ambit_tools, type ambit_tool_name } from "./ambit_tools";
+import { get_openai_responses_model } from "./openai_client";
 
 export type ConversationMessage = {
   role: "user" | "assistant";
@@ -20,7 +20,7 @@ const normalize_string = (value: unknown): string | null => {
   return trimmed ? trimmed : null;
 };
 
-const build_instructions = ({
+export const build_instructions = ({
   extra_instructions,
 }: {
   extra_instructions: string | null;
@@ -92,9 +92,16 @@ const parse_tool_arguments = (value: unknown): Record<string, unknown> => {
   }
 };
 
+/**
+ * Extracts the first tool call from an OpenAI response.
+ * We use parallel_tool_calls: false, so there should only ever be one.
+ * Logs a warning if multiple are detected (shouldn't happen with our config).
+ */
 const extract_first_tool_call = (response: Record<string, unknown>): extracted_tool_call | null => {
   const output = response["output"];
   if (!Array.isArray(output)) return null;
+
+  const tool_calls: extracted_tool_call[] = [];
 
   for (const item of output) {
     if (!is_record(item)) continue;
@@ -119,24 +126,27 @@ const extract_first_tool_call = (response: Record<string, unknown>): extracted_t
     if (
       name !== "analyze_camera_frame" &&
       name !== "generate_photo" &&
-      name !== "calendar_list_events" &&
-      name !== "calendar_get_event" &&
-      name !== "calendar_create_event" &&
-      name !== "calendar_update_event" &&
-      name !== "calendar_delete_event" &&
       name !== "send_text_message"
     ) {
+      console.warn(`[openai_responses] Ignoring unknown tool call: ${name}`);
       continue;
     }
 
-    return {
+    tool_calls.push({
       name,
       call_id,
       arguments: parse_tool_arguments(item["arguments"]),
-    };
+    });
   }
 
-  return null;
+  if (tool_calls.length > 1) {
+    console.warn(
+      `[openai_responses] Multiple tool calls detected (${tool_calls.length}), ` +
+      `but parallel_tool_calls should be false. Using first: ${tool_calls[0].name}`
+    );
+  }
+
+  return tool_calls[0] ?? null;
 };
 
 export const openai_responses_create = async ({
@@ -159,15 +169,10 @@ export const openai_responses_create = async ({
     throw new Error("OpenAI client is missing responses.create().");
   }
 
-  const response = await (create as (...args: unknown[]) => Promise<unknown>).call(
-    responses,
-    payload
-  );
-
+  const response = await (create as (...args: unknown[]) => Promise<unknown>).call(responses, payload);
   if (!is_record(response)) {
-    throw new Error("OpenAI response is not an object.");
+    throw new Error("OpenAI responses.create() returned a non-object response.");
   }
-
   return response;
 };
 
@@ -181,6 +186,7 @@ export const create_openai_response = async ({
   previous_response_id = null,
   conversation_id = null,
   extra_instructions = null,
+  enable_web_search = false,
 }: {
   openai: OpenAI;
   text: string;
@@ -188,6 +194,7 @@ export const create_openai_response = async ({
   previous_response_id?: string | null;
   conversation_id?: string | null;
   extra_instructions?: string | null;
+  enable_web_search?: boolean;
 }) => {
   const input_with_history: ConversationMessage[] = [
     ...history,
@@ -201,12 +208,19 @@ export const create_openai_response = async ({
 
   const instructions = build_instructions({ extra_instructions });
 
+  const tools = enable_web_search 
+    ? [{ type: "web_search" }]
+    : [];
+
   const payload: Record<string, unknown> = {
-    model: "gpt-4o-mini",
+    model: get_openai_responses_model(),
     instructions,
     input: openai_input,
-    tools: [{ type: "web_search" }, OPENAI_DOCS_MCP_TOOL],
   };
+
+  if (tools.length > 0) {
+    payload["tools"] = tools;
+  }
 
   const response = await openai_responses_create({ openai, payload });
   const response_id = normalize_string(response["id"]);
@@ -266,6 +280,7 @@ export const create_openai_response_with_tools = async ({
   conversation_id = null,
   extra_instructions = null,
   forced_tool_name = null,
+  enable_web_search = false,
 }: {
   openai: OpenAI;
   text: string;
@@ -274,6 +289,7 @@ export const create_openai_response_with_tools = async ({
   conversation_id?: string | null;
   extra_instructions?: string | null;
   forced_tool_name?: ambit_tool_name | null;
+  enable_web_search?: boolean;
 }): Promise<create_openai_response_with_tools_result> => {
   const input_with_history: ConversationMessage[] = [
     ...history,
@@ -282,14 +298,20 @@ export const create_openai_response_with_tools = async ({
 
   const instructions = build_instructions({ extra_instructions });
 
+  // Always expose all tools - let the model decide when to use them
+  const tools = enable_web_search 
+    ? [{ type: "web_search" }, ...ambit_tools]
+    : ambit_tools;
+
   const payload: Record<string, unknown> = {
-    model: "gpt-4o-mini",
+    model: get_openai_responses_model(),
     instructions,
     input: input_with_history,
-    tools: [{ type: "web_search" }, ...ambit_tools],
+    tools,
     tool_choice: forced_tool_name
       ? { type: "function", name: forced_tool_name }
       : "auto",
+    parallel_tool_calls: false, // Enforce single tool call per turn for simpler flow
   };
 
   const response = await openai_responses_create({ openai, payload });
@@ -338,6 +360,7 @@ export const continue_openai_response_with_tool_output = async ({
   call_id,
   tool_output,
   extra_instructions = null,
+  enable_web_search = false,
 }: {
   openai: OpenAI;
   previous_response_id: string | null;
@@ -345,6 +368,7 @@ export const continue_openai_response_with_tool_output = async ({
   call_id: string;
   tool_output: string | Record<string, unknown>;
   extra_instructions?: string | null;
+  enable_web_search?: boolean;
 }): Promise<create_openai_response_with_tools_result> => {
   const normalized_previous_response_id = normalize_string(previous_response_id);
   const normalized_conversation_id = normalize_string(conversation_id);
@@ -358,8 +382,13 @@ export const continue_openai_response_with_tool_output = async ({
   const output_string =
     typeof tool_output === "string" ? tool_output : JSON.stringify(tool_output);
 
+  // For tool continuations, use all tools since we're mid-conversation
+  const tools = enable_web_search 
+    ? [{ type: "web_search" }, ...ambit_tools]
+    : ambit_tools;
+
   const payload: Record<string, unknown> = {
-    model: "gpt-4o-mini",
+    model: get_openai_responses_model(),
     instructions,
     input: [
       {
@@ -368,8 +397,9 @@ export const continue_openai_response_with_tool_output = async ({
         output: output_string,
       },
     ],
-    tools: [{ type: "web_search" }, ...ambit_tools],
+    tools,
     tool_choice: "auto",
+    parallel_tool_calls: false, // Enforce single tool call per turn for simpler flow
   };
 
   if (normalized_conversation_id) {

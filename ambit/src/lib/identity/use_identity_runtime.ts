@@ -385,7 +385,6 @@ export const useIdentityRuntime = ({
 
         const label = match.profile_id;
         if (label && label !== candidate_profile_id) {
-          console.log(`[Identity] New candidate detected: ${label} (was: ${candidate_profile_id || "none"})`);
           candidate_profile_id = label;
           candidate_started_at = now;
           candidate_last_seen_at = now;
@@ -413,17 +412,13 @@ export const useIdentityRuntime = ({
         );
 
         if (confirmed && label) {
-          console.log(`[Identity] Confirmed: ${label} (held for ${Math.round(now - candidate_started_at)}ms)`);
           set_recognized_profile_id(label);
           last_confirmed_profile_id = label;
           last_confirmed_at = now;
 
           // Switch context to the currently confirmed profile.
           if (active_profile_id !== label) {
-            console.log(`[Identity] Switching profile context: ${active_profile_id} → ${label}`);
             on_change_active_profile_id(label);
-          } else {
-            console.log(`[Identity] Already on profile ${label}, no switch needed`);
           }
         } else {
           const should_keep_recognition = Boolean(
@@ -639,7 +634,6 @@ export const useIdentityRuntime = ({
 
       set_is_profile_action_running(true);
       try {
-        console.log(`[Identity] Updating profile ${trimmed_profile_id}: ${trimmed_name}`);
         await identity_patch_profile({
           base_url,
           profile_id: trimmed_profile_id,
@@ -649,11 +643,8 @@ export const useIdentityRuntime = ({
           phone_number,
           sms_consent,
         });
-        console.log(`[Identity] Profile updated, refreshing...`);
         await refresh_profiles();
-        console.log(`[Identity] Profiles refreshed, profiles count: ${profiles.length}`);
       } catch (error) {
-        console.error(`[Identity] Failed to update profile:`, error);
         set_profile_action_error(
           error instanceof Error ? error.message : "Failed to update profile."
         );
@@ -697,8 +688,7 @@ export const useIdentityRuntime = ({
       try {
         const bundle = await identity_get_profile({ base_url, profile_id });
         return bundle.memory;
-      } catch (error) {
-        console.error("Failed to fetch profile memory:", error);
+      } catch {
         return null;
       }
     },
@@ -710,8 +700,7 @@ export const useIdentityRuntime = ({
       const base_url = service_url.trim();
       try {
         return await identity_list_generated_images({ base_url, profile_id, limit: 50 });
-      } catch (error) {
-        console.error("Failed to fetch profile images:", error);
+      } catch {
         return null;
       }
     },
@@ -766,8 +755,7 @@ export const useIdentityRuntime = ({
         }
 
         return null;
-      } catch (error) {
-        console.error("Failed to delete memory item:", error);
+      } catch {
         return null;
       }
     },

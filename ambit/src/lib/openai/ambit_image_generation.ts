@@ -1,5 +1,6 @@
 import type OpenAI from "openai";
 import { is_record } from "./openai_responses";
+import { get_openai_image_model } from "./openai_client";
 
 const as_string = (value: unknown): string =>
   typeof value === "string" ? value.trim() : "";
@@ -45,7 +46,7 @@ export const generate_photo = async ({
   const response = (await (generate as (...args: unknown[]) => Promise<unknown>).call(
     images,
     {
-      model: "gpt-image-1",
+      model: get_openai_image_model(),
       prompt: trimmed_prompt,
       size: safe_size,
       quality: safe_quality,

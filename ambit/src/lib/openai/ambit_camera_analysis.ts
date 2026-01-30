@@ -1,5 +1,6 @@
 import type OpenAI from "openai";
 import { extract_response_text, openai_responses_create } from "./openai_responses";
+import { get_openai_camera_model } from "./openai_client";
 
 export const analyze_camera_frame = async ({
   openai,
@@ -32,7 +33,7 @@ export const analyze_camera_frame = async ({
   const prompt = [trimmed_question, focus_line].filter(Boolean).join("\n");
 
   const payload: Record<string, unknown> = {
-    model: "gpt-4o-mini",
+    model: get_openai_camera_model(),
     instructions,
     input: [
       {

@@ -12,6 +12,22 @@ export const get_openai_api_key = (): string => {
   return api_key;
 };
 
+export const get_openai_responses_model = (): string => {
+  return process.env.OPENAI_RESPONSES_MODEL || "gpt-5-nano";
+};
+
+export const get_openai_camera_model = (): string => {
+  return process.env.OPENAI_CAMERA_MODEL || "gpt-5-nano";
+};
+
+export const get_openai_memory_model = (): string => {
+  return process.env.OPENAI_MEMORY_MODEL || "gpt-5-nano";
+};
+
+export const get_openai_image_model = (): string => {
+  return process.env.OPENAI_IMAGE_MODEL || "gpt-image-1";
+};
+
 export const build_openai_headers = (): Headers => {
   const headers = new Headers();
   headers.set("Authorization", `Bearer ${get_openai_api_key()}`);

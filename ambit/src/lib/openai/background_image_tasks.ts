@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { identity_add_generated_image } from "@/lib/identity/identity_service_client";
 import { get_identity_service_url } from "@/lib/identity/identity_service_url";
 import { generate_photo } from "./ambit_image_generation";
-import { get_openai_client } from "./openai_client";
+import { get_openai_client, get_openai_image_model } from "./openai_client";
 
 export type image_task_status = "queued" | "running" | "succeeded" | "failed";
 
@@ -149,7 +149,7 @@ export const start_background_generate_photo_task = ({
 
         if (typeof generate === "function") {
           const stream = await (generate as (...args: unknown[]) => Promise<unknown>).call(images, {
-            model: "gpt-image-1",
+            model: get_openai_image_model(),
             prompt: trimmed_prompt,
             size,
             quality,

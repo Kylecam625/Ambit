@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable react-hooks/refs */
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MouthTopBar } from "@/components/mouth/mouth_top_bar";
 import { MouthTranscriptBar } from "@/components/mouth/mouth_transcript_bar";
@@ -8,9 +10,12 @@ import { useRealtimeStt } from "@/hooks/use_realtime_stt";
 import { useIdentityRuntime } from "@/lib/identity/use_identity_runtime";
 import { capture_frame_data_url_async } from "@/lib/identity/camera_browser";
 import { strip_elevenlabs_v3_audio_tags } from "@/lib/elevenlabs/elevenlabs_audio_tags";
-import { useIsFullscreen } from "@/lib/ui/use_is_fullscreen";
+import { strip_citations } from "@/lib/elevenlabs/strip_citations";
 import { GeneratedImageOverlay } from "@/components/ui/generated_image_overlay";
 import { ImageTaskToast } from "@/components/ui/image_task_toast";
+import { useVoiceQuality } from "@/hooks/use_voice_quality";
+import { useThinkingSound } from "@/hooks/use_thinking_sound";
+import { WordHighlightedText } from "@/components/ui/word_highlighted_text";
 
 export default function Home() {
   // Start in base knowledge (anonymous) on every launch.
@@ -19,12 +24,28 @@ export default function Home() {
     useState(false);
 
   const identity_video_ref = useRef<HTMLVideoElement | null>(null);
+  const { quality, set_quality } = useVoiceQuality();
+  
+  // Thinking sounds toggle
+  const [thinking_sounds_enabled, set_thinking_sounds_enabled] = useState(() => {
+    if (typeof window === "undefined") return true;
+    const saved = localStorage.getItem("ambit_thinking_sounds_enabled");
+    return saved === null ? true : saved === "true";
+  });
+
+  const handle_thinking_sounds_change = useCallback((enabled: boolean) => {
+    set_thinking_sounds_enabled(enabled);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("ambit_thinking_sounds_enabled", String(enabled));
+    }
+  }, []);
 
   const {
     is_connected,
     is_loading_mics,
     is_loading_voices,
     is_responding,
+    is_generating_tts,
     is_speaking,
     is_tts_playing,
     load_mics,
@@ -34,6 +55,7 @@ export default function Home() {
     reset_conversation,
     transcript,
     response_text,
+    used_web_search,
     ui_events,
     select_voice,
     select_mic,
@@ -44,8 +66,11 @@ export default function Home() {
     tts_audio_element,
     voice_error,
     voice_options,
+    word_alignment,
+    tts_text,
   } = useRealtimeStt({
     profile_id: active_profile_id,
+    quality_mode: quality,
     capture_camera_frame: async () => {
       const video_el = identity_video_ref.current;
       if (!video_el) return null;
@@ -71,7 +96,6 @@ export default function Home() {
   }, [active_profile_id, cancel_inflight]);
 
   const handle_identity_expired = useCallback(() => {
-    console.log("[Page] Identity expired, switching to anonymous mode");
     // 1) Clear the active profile's conversation state
     reset_conversation();
     // 2) Switch to anonymous mode
@@ -82,29 +106,9 @@ export default function Home() {
   useEffect(() => {
     if (!should_reset_after_identity_unload) return;
     if (active_profile_id !== null) return;
-    console.log("[Page] Resetting conversation after identity unload");
     reset_conversation();
     set_should_reset_after_identity_unload(false);
   }, [active_profile_id, reset_conversation, should_reset_after_identity_unload]);
-
-  // Log when active profile changes
-  useEffect(() => {
-    console.log(`[Page] Active profile changed to: ${active_profile_id ? active_profile_id : "Anonymous"}`);
-  }, [active_profile_id]);
-
-  // Auto-start on mount
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (!is_connected) {
-        start_realtime();
-      }
-    }, 500);
-
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const is_fullscreen = useIsFullscreen();
 
   const identity = useIdentityRuntime({
     active_profile_id,
@@ -119,7 +123,6 @@ export default function Home() {
     const recognized = identity.recognized_profile_id;
     if (!recognized) return;
     if (active_profile_id === recognized) return;
-    console.log(`[Page Safety Net] Syncing active_profile_id: ${active_profile_id} → ${recognized}`);
     set_active_profile_id(recognized);
   }, [active_profile_id, identity.recognized_profile_id]);
 
@@ -155,68 +158,26 @@ export default function Home() {
           ? "listening"
           : "initializing";
 
-  const display_response_text = strip_elevenlabs_v3_audio_tags(response_text);
+  // Play thinking sound during thinking phase and TTS generation (if enabled)
+  useThinkingSound(is_responding || is_generating_tts, thinking_sounds_enabled);
+
+  // Use tts_text if available (derived from alignment), otherwise fall back to processed response_text
+  // Only strip citations if web search was actually used
+  const display_text = tts_text || (
+    used_web_search 
+      ? strip_citations(strip_elevenlabs_v3_audio_tags(response_text))
+      : strip_elevenlabs_v3_audio_tags(response_text)
+  );
 
   return (
-    <div
-      className={`${is_fullscreen ? "h-[100dvh] w-[100dvw] overflow-hidden" : "min-h-screen"} bg-zinc-950 text-zinc-100`}
-    >
+    <div className="min-h-screen bg-zinc-950 text-zinc-100">
       <GeneratedImageOverlay ui_events={ui_events} />
       <ImageTaskToast ui_events={ui_events} />
 
-      {is_fullscreen ? (
-        <main className="mx-auto flex h-full w-full max-w-[980px] flex-col gap-[clamp(10px,2.2vw,16px)] px-[clamp(10px,2.6vw,18px)] py-[clamp(10px,2.6vw,18px)]">
-          <div className="shrink-0">
-            <MouthTopBar
-              // STT
-              is_loading_mics={is_loading_mics}
-              is_loading_voices={is_loading_voices}
-              mic_devices={mic_devices}
-              on_load_voices={load_voices}
-              on_load_mics={load_mics}
-              on_select_voice={select_voice}
-              on_select_mic={select_mic}
-              selected_mic_id={selected_mic_id}
-              selected_voice_id={selected_voice_id}
-              voice_error={voice_error}
-              voice_options={voice_options}
-              // Identity
-              profiles={identity.profiles}
-              recognized_profile_id={identity.recognized_profile_id}
-              recognized_label={recognized_label}
-              identity_pill_value={identity_label}
-              identity_pill_tone={identity_tone}
-              is_identity_camera_running={identity.is_camera_running}
-              is_identity_models_loaded={identity.is_models_loaded}
-              is_identity_busy={identity.is_profile_action_running}
-              identity_error_message={identity_error_message}
-              on_identity_refresh={() => void identity.refresh_profiles()}
-              on_identity_delete_profile={(args) => void identity.delete_profile(args)}
-              on_identity_create_profile={(args) => void identity.create_profile(args)}
-              on_identity_update_profile={(args) => void identity.update_profile(args)}
-              on_identity_capture_enrollment={identity.capture_profile_enrollment}
-              on_identity_add_profile_enrollment={(args) => void identity.add_profile_enrollment(args)}
-              on_identity_view_memory={identity.view_profile_memory}
-              on_identity_view_generated_images={identity.view_profile_generated_images}
-              on_identity_delete_memory_item={identity.delete_profile_memory_item}
-              // Status
-              state_label={state}
-              state_tone={state === "speaking" ? "ok" : state === "thinking" ? "warn" : "neutral"}
-              is_connected={is_connected}
-            />
-          </div>
-
-          <MouthWaves state={state} tts_audio_element={tts_audio_element} />
-
-          <div className="shrink-0">
-            <MouthTranscriptBar transcript={transcript} />
-          </div>
-        </main>
-      ) : (
-        <main className="mx-auto w-full max-w-[980px] px-[clamp(10px,2.6vw,18px)] py-[clamp(14px,3vw,28px)]">
-          <div className="relative overflow-hidden rounded-[clamp(22px,4vw,32px)] border border-zinc-800/80 bg-black/35 p-[clamp(10px,2.6vw,18px)] shadow-2xl ring-1 ring-white/5">
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(56,189,248,0.08),transparent_55%),radial-gradient(ellipse_at_bottom,rgba(168,85,247,0.10),transparent_55%)]" />
-            <div className="relative flex flex-col gap-[clamp(10px,2.2vw,16px)]">
+      <main className="mx-auto w-full max-w-[980px] px-[clamp(10px,2.6vw,18px)] py-[clamp(14px,3vw,28px)]">
+        <div className="relative overflow-hidden rounded-[clamp(22px,4vw,32px)] border border-zinc-800/80 bg-black/35 p-[clamp(10px,2.6vw,18px)] shadow-2xl ring-1 ring-white/5">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(56,189,248,0.08),transparent_55%),radial-gradient(ellipse_at_bottom,rgba(168,85,247,0.10),transparent_55%)]" />
+          <div className="relative flex flex-col gap-[clamp(10px,2.2vw,16px)]">
               <div className="shrink-0">
                 <MouthTopBar
                   // STT
@@ -231,6 +192,10 @@ export default function Home() {
                   selected_voice_id={selected_voice_id}
                   voice_error={voice_error}
                   voice_options={voice_options}
+                  voice_quality={quality}
+                  on_voice_quality_change={set_quality}
+                  thinking_sounds_enabled={thinking_sounds_enabled}
+                  on_thinking_sounds_change={handle_thinking_sounds_change}
                   // Identity
                   profiles={identity.profiles}
                   recognized_profile_id={identity.recognized_profile_id}
@@ -272,9 +237,20 @@ export default function Home() {
                   <p className="text-[clamp(10px,1.3vw,12px)] uppercase tracking-[0.22em] text-zinc-500">
                     Response
                   </p>
-                  <p className="mt-2 text-[clamp(14px,2.2vw,20px)] font-medium text-zinc-100 leading-snug whitespace-pre-wrap">
-                    {display_response_text.trim() || (is_responding ? "Thinking…" : "…")}
-                  </p>
+                  <div className="mt-2">
+                    {is_responding ? (
+                      <p className="text-[clamp(14px,2.2vw,20px)] font-medium text-zinc-100 leading-snug">
+                        Thinking…
+                      </p>
+                    ) : (
+                      <WordHighlightedText
+                        text={display_text.trim() || "…"}
+                        word_alignment={word_alignment}
+                        audio_element={tts_audio_element}
+                        className="text-[clamp(14px,2.2vw,20px)] font-medium text-zinc-100 leading-snug whitespace-pre-wrap"
+                      />
+                    )}
+                  </div>
                 </div>
               ) : null}
 
@@ -304,7 +280,6 @@ export default function Home() {
             </div>
           </div>
         </main>
-      )}
 
       {/* Hidden camera element for background face recognition */}
       <video

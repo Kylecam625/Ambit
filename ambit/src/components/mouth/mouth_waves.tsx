@@ -30,7 +30,7 @@ export const MouthWaves = ({
         <BarVisualizer
           state={state}
           audioElement={tts_audio_element}
-          barCount={52}
+          barCount={32}
           minHeight={10}
           maxHeight={98}
           className="h-full"

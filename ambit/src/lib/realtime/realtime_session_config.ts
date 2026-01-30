@@ -1,13 +1,15 @@
 export const REALTIME_AUDIO_SAMPLE_RATE = 24000;
 export const REALTIME_TRANSCRIPTION_MODEL = "gpt-4o-transcribe";
 
-export const REALTIME_AUDIO_PROCESSOR_BUFFER_SIZE = 2048;
+// Reduced from 2048 to 1024 for lower latency (~42ms at 24kHz vs ~85ms)
+// This works better with AudioWorklet's off-main-thread processing
+export const REALTIME_AUDIO_PROCESSOR_BUFFER_SIZE = 1024;
 
 export const REALTIME_SEMANTIC_VAD = {
   type: "semantic_vad" as const,
   // "high" = detect speech start as soon as possible (best for barge-in).
   // "auto"/"medium" = balanced. "low" = wait longer for user pauses.
-  eagerness: "high" as const,
+  eagerness: "medium" as const,
   // We only use Realtime for transcription + turn detection.
   // Ambit generates responses via /api/realtime/respond.
   create_response: false,
@@ -27,7 +29,7 @@ export const build_realtime_transcription_session = () => ({
       },
       transcription: {
         model: REALTIME_TRANSCRIPTION_MODEL,
-        prompt: "Hi Ambit, how are you? Ambit is a friendly AI assistant.",
+        prompt: "Your name is Ambit",
       },
       turn_detection: {
         ...REALTIME_SEMANTIC_VAD,

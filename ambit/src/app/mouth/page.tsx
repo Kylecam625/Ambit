@@ -1,6 +1,15 @@
-import { MouthScreen } from "@/components/mouth/mouth_screen";
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 
 export default function MouthPage() {
-  return <MouthScreen />;
+  const router = useRouter();
+  
+  useEffect(() => {
+    router.replace("/");
+  }, [router]);
+  
+  return null;
 }
 

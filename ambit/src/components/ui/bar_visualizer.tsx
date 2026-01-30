@@ -47,8 +47,8 @@ class AudioAnalyzer {
         const source = context.createMediaElementSource(element);
         const analyser = context.createAnalyser();
         
-        analyser.fftSize = 4096;
-        analyser.smoothingTimeConstant = 0.55;
+        analyser.fftSize = 2048; // Reduced from 4096 for better performance
+        analyser.smoothingTimeConstant = 0.6;
         analyser.minDecibels = -70;
         analyser.maxDecibels = -0;
 
@@ -138,40 +138,31 @@ const useAudioFrequencies = (
     const update = () => {
       analyser.getByteFrequencyData(data);
 
-      // Use logarithmic distribution for more spread across frequency spectrum
+      // Simplified frequency mapping for better performance
       const values = Array.from({ length: bar_count }, (_, i) => {
-        // Logarithmic mapping - more detail in lower frequencies (voice range)
-        const log_pos = Math.pow(i / bar_count, 2.2);
-        const freq_index = Math.floor(log_pos * data.length * 0.4); // Use lower 40% of spectrum
-        const band_width = Math.max(4, Math.floor(data.length * 0.025));
+        const log_pos = Math.pow(i / bar_count, 2.0);
+        const freq_index = Math.floor(log_pos * data.length * 0.35);
+        const band_width = Math.max(3, Math.floor(data.length * 0.02));
         
-        const start = freq_index;
-        const end = Math.min(start + band_width, data.length);
-
+        const end = Math.min(freq_index + band_width, data.length);
         let sum = 0;
-        for (let j = start; j < end; j++) {
+        for (let j = freq_index; j < end; j++) {
           sum += data[j];
         }
 
-        return sum / (end - start) / 255;
+        return sum / band_width / 255;
       });
 
-      // Temporal smoothing with previous values
-      const time_smoothed = values.map((val, i) => {
+      // Single-pass smoothing
+      const smoothed = values.map((val, i) => {
         const prev = previous_ref.current[i] || 0;
-        return prev * 0.6 + val * 0.4;
+        const left = values[i - 1] || val;
+        const right = values[i + 1] || val;
+        return prev * 0.5 + val * 0.3 + left * 0.1 + right * 0.1;
       });
 
-      // Spatial smoothing - make neighboring bars influence each other
-      const spatially_smoothed = time_smoothed.map((val, i) => {
-        const left = time_smoothed[i - 1] || val;
-        const right = time_smoothed[i + 1] || val;
-        // Blend with neighbors for wave-like flow
-        return val * 0.6 + left * 0.2 + right * 0.2;
-      });
-
-      previous_ref.current = time_smoothed;
-      set_frequencies(spatially_smoothed);
+      previous_ref.current = smoothed;
+      set_frequencies(smoothed);
       animation_frame = requestAnimationFrame(update);
     };
 
@@ -307,10 +298,10 @@ export const BarVisualizer = ({
       {bar_heights.map((height, index) => (
         <div
           key={index}
-          className={`flex-1 rounded-full ${barClassName}`}
+          className={`flex-1 rounded-full ${barClassName} will-change-transform`}
           style={{
             height: `${height}%`,
-            transition: can_use_audio ? "height 0.05s ease-out" : "height 0.2s ease-out",
+            transition: can_use_audio ? "height 0.08s ease-out" : "height 0.15s ease-out",
           }}
         />
       ))}

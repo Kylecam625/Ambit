@@ -1,6 +1,5 @@
 "use client";
 
-import { FullscreenButton } from "@/components/ui/fullscreen_button";
 import { SettingsPanel } from "@/components/ui/settings_panel";
 import type {
   identity_generated_image,
@@ -64,6 +63,10 @@ export const MouthTopBar = ({
   on_load_mics,
   on_select_voice,
   on_select_mic,
+  voice_quality,
+  on_voice_quality_change,
+  thinking_sounds_enabled,
+  on_thinking_sounds_change,
 
   profiles,
   recognized_profile_id,
@@ -100,6 +103,10 @@ export const MouthTopBar = ({
   selected_voice_id: string | null;
   voice_error: string | null;
   voice_options: Array<{ voice_id: string; name: string; preview_url: string | null }>;
+  voice_quality: "quality" | "fast";
+  on_voice_quality_change: (quality: "quality" | "fast") => void;
+  thinking_sounds_enabled: boolean;
+  on_thinking_sounds_change: (enabled: boolean) => void;
 
   // Identity / Profiles
   profiles: identity_profile_summary[];
@@ -197,7 +204,6 @@ export const MouthTopBar = ({
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
-        <FullscreenButton />
         <SettingsPanel
           is_loading_mics={is_loading_mics}
           is_loading_voices={is_loading_voices}
@@ -211,6 +217,10 @@ export const MouthTopBar = ({
           selected_voice_id={selected_voice_id}
           voice_error={voice_error}
           voice_options={voice_options}
+          voice_quality={voice_quality}
+          on_voice_quality_change={on_voice_quality_change}
+          thinking_sounds_enabled={thinking_sounds_enabled}
+          on_thinking_sounds_change={on_thinking_sounds_change}
           profiles={profiles}
           recognized_profile_id={recognized_profile_id}
           recognized_label={recognized_label}

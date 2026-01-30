@@ -8,7 +8,9 @@ import {
   load_session_conversation_state,
   persist_session_conversation_state,
 } from "@/lib/realtime/session_conversation_storage";
-import { strip_elevenlabs_v3_audio_tags_from_messages } from "@/lib/elevenlabs/elevenlabs_audio_tags";
+import { strip_elevenlabs_v3_audio_tags_from_messages, strip_elevenlabs_v3_audio_tags } from "@/lib/elevenlabs/elevenlabs_audio_tags";
+import { strip_citations } from "@/lib/elevenlabs/strip_citations";
+import { parse_elevenlabs_stream_with_timestamps_jsonl } from "@/lib/elevenlabs/elevenlabs_alignment_to_words";
 
 type mic_device = {
   device_id: string;
@@ -115,21 +117,15 @@ void MAX_CONVERSATION_MESSAGE_CHARS;
 export const useRealtimeStt = ({
   profile_id = null,
   capture_camera_frame = null,
+  quality_mode = "quality",
 }: {
   profile_id?: string | null;
   capture_camera_frame?: (() => Promise<string | null>) | null;
+  quality_mode?: "quality" | "fast";
 } = {}) => {
-  console.log(`[useRealtimeStt] Hook called with profile_id: ${profile_id}`);
-  
   // Conversation state is intentionally shared across profile switches.
   // Profile switching should change identity context (profile_id) without wiping conversation history.
   const initial_session = load_session_conversation_state(null);
-  console.log(`[useRealtimeStt] Loaded initial session:`, {
-    profile_id,
-    message_seq: initial_session.message_seq,
-    conversation_history_length: initial_session.conversation_history.length,
-    conversation_id: initial_session.conversation_id,
-  });
 
   const client_ref = useRef<RealtimeTranscriptionClient | null>(null);
   const response_request_id_ref = useRef(0);
@@ -137,6 +133,8 @@ export const useRealtimeStt = ({
   const last_spoken_text_ref = useRef("");
   const last_transcript_done_ref = useRef<{ text: string; at_ms: number } | null>(null);
   const tts_request_id_ref = useRef(0);
+  const tts_queued_for_response_id_ref = useRef(0);
+  const active_tts_requests_ref = useRef<Set<number>>(new Set());
   const image_task_pollers_ref = useRef<
     Record<
       string,
@@ -152,6 +150,12 @@ export const useRealtimeStt = ({
   const pending_ui_events_ref = useRef<ui_event[]>([]);
   const audio_ref = useRef<HTMLAudioElement | null>(null);
   const audio_url_ref = useRef<string | null>(null);
+  const [word_alignment, set_word_alignment] = useState<Array<{
+    word: string;
+    start_time: number;
+    end_time: number;
+  }> | null>(null);
+  const [tts_text, set_tts_text] = useState<string>("");
   const profile_id_ref = useRef<string | null>(profile_id);
   const current_profile_id_ref = useRef<string | null>(profile_id);
   const conversation_history_ref = useRef<conversation_message[]>(
@@ -167,6 +171,7 @@ export const useRealtimeStt = ({
   const [is_speaking, set_is_speaking] = useState(false);
   const is_speaking_ref = useRef(false);
   const [is_responding, set_is_responding] = useState(false);
+  const [is_generating_tts, set_is_generating_tts] = useState(false);
   const [is_tts_playing, set_is_tts_playing] = useState(false);
   const [is_loading_mics, set_is_loading_mics] = useState(false);
   const [mic_devices, set_mic_devices] = useState<mic_device[]>([]);
@@ -182,6 +187,7 @@ export const useRealtimeStt = ({
   const [voice_error, set_voice_error] = useState<string | null>(null);
   const [transcript, set_transcript] = useState("");
   const [response_text, set_response_text] = useState("");
+  const [used_web_search, set_used_web_search] = useState(false);
   const [ui_events, set_ui_events] = useState<ui_event[]>([]);
   const [error_message, set_error_message] = useState<string | null>(null);
   const [response_error, set_response_error] = useState<string | null>(null);
@@ -198,9 +204,6 @@ export const useRealtimeStt = ({
 
   // Keep profile_id_ref in sync with the prop
   useEffect(() => {
-    if (profile_id_ref.current !== profile_id) {
-      console.log(`[useRealtimeStt] profile_id_ref updated: ${profile_id_ref.current} → ${profile_id}`);
-    }
     profile_id_ref.current = profile_id;
   }, [profile_id]);
 
@@ -250,11 +253,6 @@ export const useRealtimeStt = ({
     message_seq_ref.current = message_seq;
   }, [message_seq]);
 
-  // Debug: Log when message_seq state changes
-  useEffect(() => {
-    console.log(`[State] message_seq changed to: ${message_seq}`);
-  }, [message_seq]);
-
   // When profile changes, load that profile's conversation (strict isolation).
   useEffect(() => {
     if (current_profile_id_ref.current === profile_id) {
@@ -262,15 +260,9 @@ export const useRealtimeStt = ({
     }
 
     // Profile changed! Load the new profile's conversation state
-    console.log(`[Profile Switch] Loading conversation for profile: ${profile_id || "anonymous"}`);
     current_profile_id_ref.current = profile_id;
 
     const new_session = load_session_conversation_state(profile_id);
-    console.log(`[Profile Switch] Loaded session:`, {
-      profile_id,
-      message_seq: new_session.message_seq,
-      conversation_history_length: new_session.conversation_history.length,
-    });
     
     // Update refs immediately (avoid stale closures)
     conversation_history_ref.current = new_session.conversation_history;
@@ -297,13 +289,6 @@ export const useRealtimeStt = ({
     }
 
     try {
-      console.log(`[Persist] Saving conversation state:`, {
-        profile_id,
-        message_seq,
-        conversation_history_length: conversation_history.length,
-        conversation_id,
-      });
-      
       persist_session_conversation_state({
         conversation_history,
         previous_response_id,
@@ -336,7 +321,10 @@ export const useRealtimeStt = ({
       audio_url_ref.current = null;
     }
     set_tts_audio_element(null);
+    set_is_generating_tts(false);
     set_is_tts_playing(false);
+    set_word_alignment(null);
+    set_tts_text("");
   }, []);
 
   const cancel_tts = useCallback(() => {
@@ -415,7 +403,6 @@ export const useRealtimeStt = ({
 
         const age_ms = Date.now() - active.started_at_ms;
         if (age_ms > 1000 * 60 * 10) {
-          console.warn(`[ImageTask] Poll timeout for task_id=${trimmed}`);
           set_ui_events((current) => [
             ...current,
             { type: "image_task_timeout", task_id: trimmed },
@@ -494,7 +481,6 @@ export const useRealtimeStt = ({
           if (status === "failed") {
             const err =
               typeof data?.error === "string" ? String(data.error) : "Image generation failed";
-            console.error(`[ImageTask] Failed task_id=${trimmed}:`, err);
             set_ui_events((current) => [
               ...current,
               { type: "image_task_failed", task_id: trimmed, error: err },
@@ -504,9 +490,8 @@ export const useRealtimeStt = ({
           }
 
           active.timeout_id = window.setTimeout(() => void poll_once(), 750);
-        } catch (error) {
+        } catch {
           if (active.abort_controller.signal.aborted) return;
-          console.warn(`[ImageTask] Poll error task_id=${trimmed}:`, error);
           active.timeout_id = window.setTimeout(() => void poll_once(), 1000);
         }
       };
@@ -545,19 +530,57 @@ export const useRealtimeStt = ({
         return;
       }
 
+      // Strip citations for speech
+      const text_without_citations = strip_citations(trimmed);
+
+      if (!text_without_citations) {
+        return;
+      }
+      
+      // For alignment matching: strip audio tags (API will also strip them for alignment endpoint)
+      const text_for_alignment = strip_elevenlabs_v3_audio_tags(text_without_citations);
+
       const request_id = tts_request_id_ref.current + 1;
       tts_request_id_ref.current = request_id;
+      
+      // Cancel any pending requests for the same or similar text
+      const is_duplicate = active_tts_requests_ref.current.size > 0;
+      if (is_duplicate) {
+        console.log(`[TTS #${request_id}] CANCELLED - duplicate request (${active_tts_requests_ref.current.size} already active)`);
+        return;
+      }
+      
+      active_tts_requests_ref.current.add(request_id);
+      
+      console.log(`[TTS #${request_id}] Request initiated`);
+      console.log(`[TTS #${request_id}] Text: "${text_without_citations.substring(0, 100)}${text_without_citations.length > 100 ? '...' : ''}"`);
+      
       stop_audio();
+      set_is_generating_tts(true);
+      set_tts_text(text_for_alignment); // Store cleaned text for alignment matching
+
+      const timing = {
+        tts_start: Date.now(),
+        first_chunk: 0,
+        all_chunks_received: 0,
+        audio_ready: 0,
+        playback_started: 0,
+      };
 
       try {
         const response = await fetch("/api/realtime/tts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            text: trimmed,
+            text: text_without_citations,
             voice_id: selected_voice_id,
+            quality_mode,
+            optimize_latency: 2, // Level 2 = ~75% latency improvement with good quality
           }),
         });
+
+        timing.first_chunk = Date.now();
+        console.log(`[TTS] First byte received in ${timing.first_chunk - timing.tts_start}ms`);
 
         if (!response.ok) {
           const data = await response.json().catch(() => null);
@@ -570,11 +593,42 @@ export const useRealtimeStt = ({
           return;
         }
 
-        const audio_blob = await response.blob();
+        // Parse streaming JSONL response: audio bytes + character alignment → word alignment
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error("No response body");
+
+        const parsed = await parse_elevenlabs_stream_with_timestamps_jsonl({
+          reader,
+          should_abort: () => tts_request_id_ref.current !== request_id,
+        });
+
+        timing.all_chunks_received = Date.now();
+
+        if (!parsed) {
+          return;
+        }
 
         if (tts_request_id_ref.current !== request_id) {
           return;
         }
+
+        const { audio_bytes, word_alignment: next_alignment, caption_text, debug } = parsed;
+
+        if (next_alignment && caption_text) {
+          console.log(
+            `[TTS] Generated ${next_alignment.length} word timings from ${debug.total_chars} characters`
+          );
+          console.log(
+            `[TTS] Caption text: "${caption_text.substring(0, 100)}${caption_text.length > 100 ? "..." : ""}"`
+          );
+          set_word_alignment(next_alignment);
+          set_tts_text(caption_text);
+        } else {
+          set_word_alignment(null);
+        }
+
+        const audio_blob = new Blob([audio_bytes], { type: "audio/mpeg" });
+        timing.audio_ready = Date.now();
 
         const url = URL.createObjectURL(audio_blob);
         audio_url_ref.current = url;
@@ -582,31 +636,48 @@ export const useRealtimeStt = ({
         audio_ref.current = audio;
         set_tts_audio_element(audio);
         audio.src = url;
-        audio.onplay = () => set_is_tts_playing(true);
+        audio.onplay = () => {
+          timing.playback_started = Date.now();
+          const total_time = timing.playback_started - timing.tts_start;
+          const streaming_time = timing.all_chunks_received - timing.first_chunk;
+          const processing_time = timing.audio_ready - timing.all_chunks_received;
+          const buffer_time = timing.playback_started - timing.audio_ready;
+          console.log(`[TTS] Audio playback started after ${total_time}ms (streaming: ${streaming_time}ms, processing: ${processing_time}ms, buffer: ${buffer_time}ms)`);
+          set_is_generating_tts(false);
+          set_is_tts_playing(true);
+        };
         audio.onpause = () => set_is_tts_playing(false);
-        audio.onerror = () => set_is_tts_playing(false);
-        audio.onended = () => {
+        audio.onerror = () => {
+          set_is_generating_tts(false);
           set_is_tts_playing(false);
+        };
+        audio.onended = () => {
+          console.log(`[TTS] Audio playback ended`);
+          set_is_tts_playing(false);
+          set_word_alignment(null);
+          set_tts_text("");
           if (audio_url_ref.current === url) {
             URL.revokeObjectURL(url);
             audio_url_ref.current = null;
           }
         };
         
-        // Add small delay to ensure audio is ready
-        await new Promise(resolve => setTimeout(resolve, 50));
-        await audio.play().catch((err) => {
-          console.error("Failed to play audio:", err);
+        // Start playback immediately (no artificial delay)
+        await audio.play().catch(() => {
           set_is_tts_playing(false);
         });
       } catch (error) {
+        console.error(`[TTS #${request_id}] Error:`, error);
         if (tts_request_id_ref.current !== request_id) {
           return;
         }
-        console.error("Failed to play TTS audio:", error);
+        set_is_generating_tts(false);
+      } finally {
+        // Remove from active requests
+        active_tts_requests_ref.current.delete(request_id);
       }
     },
-    [stop_audio, selected_voice_id]
+    [stop_audio, selected_voice_id, quality_mode]
   );
 
   const load_mics = useCallback(async () => {
@@ -620,8 +691,8 @@ export const useRealtimeStt = ({
     try {
       try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      } catch (error) {
-        console.warn("Microphone permission not granted yet.", error);
+      } catch {
+        // Microphone permission not granted yet
       }
 
       const devices = await navigator.mediaDevices.enumerateDevices();
@@ -649,8 +720,8 @@ export const useRealtimeStt = ({
         }
         return null;
       });
-    } catch (error) {
-      console.error("Failed to load microphones.", error);
+    } catch {
+      // Failed to load microphones
     } finally {
       if (stream) {
         stream.getTracks().forEach((track) => track.stop());
@@ -747,6 +818,13 @@ export const useRealtimeStt = ({
         return;
       }
 
+      const timing = {
+        request_start: Date.now(),
+        json_received: 0,
+      };
+
+      console.log(`[OpenAI] User prompted: "${trimmed}"`);
+
       const request_id = response_request_id_ref.current + 1;
       response_request_id_ref.current = request_id;
       set_is_responding(true);
@@ -758,20 +836,13 @@ export const useRealtimeStt = ({
       const abort_controller = new AbortController();
       response_abort_ref.current = abort_controller;
 
+      console.log(`[OpenAI] Sending request to /api/realtime/respond`);
+
       try {
         const current_message_seq = message_seq_ref.current;
         const next_message_seq = current_message_seq + 2;
         const current_profile_id = profile_id_ref.current;
         const current_history = conversation_history_ref.current;
-        const current_conversation_id = conversation_id_ref.current;
-        const current_previous_response_id = previous_response_id_ref.current;
-        
-        console.log(`[Client] send_response called with:`, {
-          message_seq: current_message_seq,
-          next_message_seq,
-          profile_id_from_ref: current_profile_id,
-          conversation_history_length: current_history.length,
-        });
         
         const body: Record<string, unknown> = {
           text: trimmed,
@@ -781,18 +852,13 @@ export const useRealtimeStt = ({
 
         if (current_profile_id) {
           body["profile_id"] = current_profile_id;
-          console.log(`[Client] ✓ Added profile_id to request body: ${current_profile_id}`);
-        } else {
-          console.log(`[Client] ⚠ No profile_id to add (current_profile_id is ${current_profile_id})`);
         }
-        
-        void current_conversation_id;
-        void current_previous_response_id;
 
         if (latest_image_task_id_ref.current) {
           body["active_image_task_id"] = latest_image_task_id_ref.current;
         }
 
+        // Single JSON POST to /api/realtime/respond (no streaming fallback)
         const response = await fetch("/api/realtime/respond", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -800,24 +866,31 @@ export const useRealtimeStt = ({
           signal: abort_controller.signal,
         });
 
-        const data = await response.json().catch(() => null);
+        const response_data = await response.json().catch(() => null);
+        timing.json_received = Date.now();
 
         if (!response.ok) {
           const message =
-            typeof data?.error === "string" ? data.error : "Failed to get a response";
+            typeof response_data?.error === "string" ? response_data.error : "Failed to get a response";
           throw new Error(message);
         }
 
+        const total_time = timing.json_received - timing.request_start;
+        console.log(`[OpenAI] Response received in ${total_time}ms`);
+
+        // Check if request was cancelled
         if (response_request_id_ref.current !== request_id) {
           return;
         }
 
-        const tool_request = is_record(data?.tool_request) ? data.tool_request : null;
+        const tool_request = is_record(response_data?.tool_request) ? response_data.tool_request : null;
 
         if (tool_request) {
           const tool_name = typeof tool_request["name"] === "string" ? tool_request["name"] : "";
           const call_id = typeof tool_request["call_id"] === "string" ? tool_request["call_id"] : "";
           const tool_arguments = is_record(tool_request["arguments"]) ? tool_request["arguments"] : {};
+
+          console.log(`[OpenAI] Tool request: ${tool_name} (call_id: ${call_id})`);
 
           if (tool_name !== "analyze_camera_frame") {
             throw new Error(`Unsupported tool request: ${tool_name || "unknown"}`);
@@ -861,10 +934,13 @@ export const useRealtimeStt = ({
             );
           })();
 
+          // Use response_data (not data) to get the response_id and conversation_id
           const pending_response_id =
-            typeof data?.response_id === "string" ? data.response_id : "";
+            typeof response_data?.response_id === "string" ? response_data.response_id : "";
           const pending_conversation_id =
-            typeof data?.conversation_id === "string" ? data.conversation_id : "";
+            typeof response_data?.conversation_id === "string" ? response_data.conversation_id : "";
+
+          console.log(`[OpenAI] Tool request: ${tool_name}, calling /api/realtime/tool`);
 
           const tool_response = await fetch("/api/realtime/tool", {
             method: "POST",
@@ -910,8 +986,11 @@ export const useRealtimeStt = ({
             typeof tool_data?.response_id === "string" ? tool_data.response_id : "";
           const next_conversation_id =
             typeof tool_data?.conversation_id === "string" ? tool_data.conversation_id : "";
+          const response_used_web_search = 
+            typeof tool_data?.used_web_search === "boolean" ? tool_data.used_web_search : false;
 
           set_response_text(next_response);
+          set_used_web_search(response_used_web_search);
           set_ui_events((current) => [...current, ...next_ui_events].slice(-20));
           maybe_start_image_task_polling({ ui_events: next_ui_events });
           set_conversation_history(updated_history);
@@ -926,29 +1005,34 @@ export const useRealtimeStt = ({
             conversation_id_ref.current = next_conversation_id;
           }
 
-          console.log(
-            `[Client] ✓ Tool response successful! Updating message_seq: ${current_message_seq} → ${next_message_seq}`
-          );
           message_seq_ref.current = next_message_seq;
           set_message_seq(next_message_seq);
           return;
         }
 
+        // No tool call - use the response directly
+        // Prefer speech_text from server
         const next_response =
-          typeof data?.speech_text === "string"
-            ? data.speech_text
-            : typeof data?.response === "string"
-              ? data.response
+          typeof response_data?.speech_text === "string"
+            ? response_data.speech_text
+            : typeof response_data?.text === "string"
+              ? response_data.text
               : "";
         const updated_history = strip_elevenlabs_v3_audio_tags_from_messages(
-          normalize_conversation_history(data?.history)
+          normalize_conversation_history(response_data?.history)
         );
-        const next_ui_events = Array.isArray(data?.ui_events) ? data.ui_events : [];
-        const response_id = typeof data?.response_id === "string" ? data.response_id : "";
+        const next_ui_events = Array.isArray(response_data?.ui_events) ? response_data.ui_events : [];
+        const response_id = typeof response_data?.response_id === "string" ? response_data.response_id : "";
         const next_conversation_id =
-          typeof data?.conversation_id === "string" ? data.conversation_id : "";
+          typeof response_data?.conversation_id === "string" ? response_data.conversation_id : "";
+        const response_used_web_search = 
+          typeof response_data?.used_web_search === "boolean" ? response_data.used_web_search : false;
+
+        console.log(`[OpenAI] Response text: "${next_response.substring(0, 150)}${next_response.length > 150 ? '...' : ''}"`);
+        console.log(`[OpenAI] Used web search: ${response_used_web_search}`);
 
         set_response_text(next_response);
+        set_used_web_search(response_used_web_search);
         set_ui_events((current) => [...current, ...next_ui_events].slice(-20));
         maybe_start_image_task_polling({ ui_events: next_ui_events });
         set_conversation_history(updated_history);
@@ -963,9 +1047,6 @@ export const useRealtimeStt = ({
           conversation_id_ref.current = next_conversation_id;
         }
 
-        console.log(
-          `[Client] ✓ Response successful! Updating message_seq: ${current_message_seq} → ${next_message_seq}`
-        );
         message_seq_ref.current = next_message_seq;
         set_message_seq(next_message_seq);
       } catch (error) {
@@ -994,7 +1075,7 @@ export const useRealtimeStt = ({
       switch (event.type) {
         case "speech_started":
           // VAD detected user started speaking → barge-in
-          console.log("[VAD] Speech started - triggering barge-in");
+          console.log("[STT] Speech started - triggering barge-in");
           is_speaking_ref.current = true;
           set_is_speaking(true);
           set_transcript("");
@@ -1004,7 +1085,7 @@ export const useRealtimeStt = ({
 
         case "speech_stopped":
           // VAD detected user stopped speaking
-          console.log("[VAD] Speech stopped");
+          console.log("[STT] Speech stopped");
           is_speaking_ref.current = false;
           set_is_speaking(false);
           flush_pending_ui_events();
@@ -1033,17 +1114,19 @@ export const useRealtimeStt = ({
               prev && prev.text === trimmed_text && now_ms - prev.at_ms < 1000
             );
             if (is_dupe) {
-              console.log("[VAD] Ignoring duplicate transcript_done");
+              console.log("[STT] Ignoring duplicate transcript_done");
               break;
             }
             last_transcript_done_ref.current = { text: trimmed_text, at_ms: now_ms };
 
+            console.log(`[STT] Transcript finalized: "${trimmed_text}"`);
             set_transcript(trimmed_text);
             void request_response({ text: trimmed_text });
           }
           break;
 
         case "error":
+          console.error("[STT] Transcription error:", event.error);
           is_speaking_ref.current = false;
           set_is_speaking(false);
           set_error_message(event.error || "Realtime transcription error");
@@ -1064,8 +1147,18 @@ export const useRealtimeStt = ({
       return;
     }
 
-    last_spoken_text_ref.current = trimmed;
-    void request_tts({ text: trimmed });
+    // Debounce TTS requests to prevent spam during streaming
+    // If text is still changing rapidly, wait for it to stabilize
+    const debounce_timer = setTimeout(() => {
+      if (last_spoken_text_ref.current === trimmed) {
+        return; // Already sent
+      }
+      last_spoken_text_ref.current = trimmed;
+      void request_tts({ text: trimmed });
+      console.log(`[TTS] Triggered from useEffect with ${trimmed.split(/\s+/).length} words`);
+    }, 150); // 150ms debounce to ensure streaming is complete
+
+    return () => clearTimeout(debounce_timer);
   }, [response_text, request_tts]);
 
   const start_realtime = useCallback(async () => {
@@ -1073,11 +1166,22 @@ export const useRealtimeStt = ({
       return;
     }
 
+    console.log("[System] Starting Ambit...");
     set_error_message(null);
 
     try {
+      console.log("[System] Connecting to OpenAI Realtime API...");
       const client = new RealtimeTranscriptionClient();
-      await client.connect(handle_realtime_event);
+      
+      // Add timeout to connection (30s)
+      const connect_timeout = new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error("Connection timeout after 30s")), 30000)
+      );
+      
+      await Promise.race([
+        client.connect(handle_realtime_event),
+        connect_timeout
+      ]);
       const saved_device_id = (() => {
         if (typeof window === "undefined") return null;
         try {
@@ -1097,11 +1201,8 @@ export const useRealtimeStt = ({
 
         try {
           return await client.start_audio_stream({ device_id: desired_device_id });
-        } catch (error) {
-          console.warn(
-            `[Realtime] Failed to start audio stream with device_id=${desired_device_id}; falling back to default mic.`,
-            error
-          );
+        } catch {
+          // Fall back to default mic if specified device fails
           return client.start_audio_stream();
         }
       })();
@@ -1109,6 +1210,7 @@ export const useRealtimeStt = ({
 
       client_ref.current = client;
       set_is_connected(true);
+      console.log("[System] Ambit ready - listening for speech");
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to start realtime transcription";
@@ -1182,6 +1284,7 @@ export const useRealtimeStt = ({
     is_loading_voices,
     is_speaking,
     is_responding,
+    is_generating_tts,
     is_tts_playing,
     load_mics,
     load_voices,
@@ -1192,6 +1295,7 @@ export const useRealtimeStt = ({
     reset_conversation,
     response_error,
     response_text,
+    used_web_search,
     ui_events,
     select_voice,
     select_mic,
@@ -1203,5 +1307,7 @@ export const useRealtimeStt = ({
     tts_audio_element,
     voice_error,
     voice_options,
+    word_alignment,
+    tts_text,
   };
 };

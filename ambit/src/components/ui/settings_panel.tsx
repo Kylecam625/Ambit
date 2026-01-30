@@ -22,6 +22,14 @@ type SettingsPanelProps = {
   selected_voice_id: string | null;
   voice_error: string | null;
   voice_options: Array<{ voice_id: string; name: string; preview_url: string | null }>;
+  
+  // Voice Quality
+  voice_quality: "quality" | "fast";
+  on_voice_quality_change: (quality: "quality" | "fast") => void;
+
+  // Thinking Sounds
+  thinking_sounds_enabled: boolean;
+  on_thinking_sounds_change: (enabled: boolean) => void;
 
   // Identity / Profiles
   profiles: identity_profile_summary[];
@@ -76,6 +84,10 @@ export const SettingsPanel = ({
   selected_voice_id,
   voice_error,
   voice_options,
+  voice_quality,
+  on_voice_quality_change,
+  thinking_sounds_enabled,
+  on_thinking_sounds_change,
   profiles,
   recognized_profile_id,
   recognized_label,
@@ -97,9 +109,6 @@ export const SettingsPanel = ({
   const [is_voice_picker_open, set_is_voice_picker_open] = useState(false);
   const [is_mic_picker_open, set_is_mic_picker_open] = useState(false);
   const [is_profiles_open, set_is_profiles_open] = useState(false);
-  const [is_calendar_loading, set_is_calendar_loading] = useState(false);
-  const [calendar_connected, set_calendar_connected] = useState<boolean | null>(null);
-  const [calendar_error, set_calendar_error] = useState<string | null>(null);
 
   const selected_mic_label =
     mic_devices.find((device) => device.device_id === selected_mic_id)?.label ??
@@ -338,6 +347,70 @@ export const SettingsPanel = ({
               ) : null}
             </div>
 
+            {/* Voice Quality Mode */}
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                Voice Mode
+              </label>
+              <div className="flex gap-2">
+                <button
+                  className={`flex-1 rounded-full border px-4 py-2 text-sm font-semibold transition-colors ${
+                    voice_quality === "quality"
+                      ? "border-cyan-500/50 bg-cyan-500/20 text-cyan-100"
+                      : "border-zinc-800 bg-black/40 text-zinc-300 hover:border-zinc-700"
+                  }`}
+                  onClick={() => on_voice_quality_change("quality")}
+                  type="button"
+                >
+                  Quality
+                </button>
+                <button
+                  className={`flex-1 rounded-full border px-4 py-2 text-sm font-semibold transition-colors ${
+                    voice_quality === "fast"
+                      ? "border-cyan-500/50 bg-cyan-500/20 text-cyan-100"
+                      : "border-zinc-800 bg-black/40 text-zinc-300 hover:border-zinc-700"
+                  }`}
+                  onClick={() => on_voice_quality_change("fast")}
+                  type="button"
+                >
+                  Fast
+                </button>
+              </div>
+              <p className="text-xs text-zinc-500">
+                {voice_quality === "quality" 
+                  ? "v3 with emotional audio tags (slower)" 
+                  : "Flash v2.5, faster responses (no audio tags)"}
+              </p>
+            </div>
+
+            {/* Thinking Sounds Toggle */}
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                Loading Sounds
+              </label>
+              <button
+                className={`flex w-full items-center justify-between rounded-full border px-4 py-2 text-sm font-semibold transition-colors ${
+                  thinking_sounds_enabled
+                    ? "border-cyan-500/50 bg-cyan-500/20 text-cyan-100"
+                    : "border-zinc-800 bg-black/40 text-zinc-300 hover:border-zinc-700"
+                }`}
+                onClick={() => on_thinking_sounds_change(!thinking_sounds_enabled)}
+                type="button"
+              >
+                <span>{thinking_sounds_enabled ? "Enabled" : "Disabled"}</span>
+                <div className={`relative h-6 w-11 rounded-full transition-colors ${
+                  thinking_sounds_enabled ? "bg-cyan-500" : "bg-zinc-700"
+                }`}>
+                  <div className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                    thinking_sounds_enabled ? "translate-x-5" : "translate-x-0.5"
+                  }`} />
+                </div>
+              </button>
+              <p className="text-xs text-zinc-500">
+                Play ambient sounds while Ambit is thinking
+              </p>
+            </div>
+
             {/* Voice Selection */}
             <div className="flex flex-col gap-2">
               <label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
@@ -354,59 +427,6 @@ export const SettingsPanel = ({
                 value={selected_voice_id ?? ""}
                 voices={voice_options}
               />
-            </div>
-
-            {/* Calendar */}
-            <div className="flex flex-col gap-2">
-              <label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                Calendar
-              </label>
-              {calendar_error ? (
-                <p className="text-xs text-red-400">{calendar_error}</p>
-              ) : (
-                <p className="text-xs text-zinc-400">
-                  Status:{" "}
-                  {is_calendar_loading
-                    ? "Checking..."
-                    : calendar_connected === true
-                      ? "Connected"
-                      : calendar_connected === false
-                        ? "Not connected"
-                        : "Unknown"}
-                </p>
-              )}
-
-              <div className="flex flex-col gap-2">
-                <a
-                  className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-left text-sm font-semibold text-zinc-200 hover:border-zinc-600"
-                  href={`/api/google_calendar/connect?profile_id=${encodeURIComponent(
-                    calendar_profile_id
-                  )}&return_to=${encodeURIComponent(build_return_to())}`}
-                >
-                  Connect Google Calendar
-                </a>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    className="rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-left text-sm font-semibold text-zinc-200 hover:border-zinc-600 disabled:cursor-not-allowed disabled:opacity-50"
-                    onClick={() => void disconnect_calendar()}
-                    disabled={is_calendar_loading}
-                    type="button"
-                    title="Disconnect Calendar"
-                  >
-                    Disconnect
-                  </button>
-                  <button
-                    className="rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-left text-sm font-semibold text-zinc-200 hover:border-zinc-600 disabled:cursor-not-allowed disabled:opacity-50"
-                    onClick={() => void load_calendar_status()}
-                    disabled={is_calendar_loading}
-                    type="button"
-                    title="Refresh Calendar Status"
-                  >
-                    Refresh
-                  </button>
-                </div>
-              </div>
             </div>
 
             {/* Profiles */}

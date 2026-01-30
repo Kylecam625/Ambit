@@ -1,4 +1,5 @@
 import { strip_elevenlabs_v3_audio_tags } from "@/lib/elevenlabs/elevenlabs_audio_tags";
+import { strip_citations } from "@/lib/elevenlabs/strip_citations";
 
 export const SttResponse = ({
   error_message,
@@ -9,7 +10,7 @@ export const SttResponse = ({
   is_responding: boolean;
   response: string;
 }) => {
-  const display_response = strip_elevenlabs_v3_audio_tags(response);
+  const display_response = strip_citations(strip_elevenlabs_v3_audio_tags(response));
   const message = is_responding
     ? "Thinking..."
     : display_response || "No response yet. Ask a question to get a reply.";

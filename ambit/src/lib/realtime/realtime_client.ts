@@ -19,9 +19,9 @@ export class RealtimeTranscriptionClient {
   private ws: WebSocket | null = null;
   private audio_context: AudioContext | null = null;
   private media_stream: MediaStream | null = null;
-  private processor: ScriptProcessorNode | null = null;
+  private processor: AudioWorkletNode | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
-  private gain: GainNode | null = null;
+  private worklet_loaded: boolean = false;
   private on_event: ((event: RealtimeTranscriptDelta) => void) | null = null;
 
   async connect(
@@ -173,14 +173,71 @@ export class RealtimeTranscriptionClient {
     });
 
     this.audio_context = new AudioContext({ sampleRate: REALTIME_AUDIO_SAMPLE_RATE });
+    
+    // Load AudioWorklet module if not already loaded
+    if (!this.worklet_loaded) {
+      try {
+        await this.audio_context.audioWorklet.addModule('/audio_worklet_processor.js');
+        this.worklet_loaded = true;
+        console.log('[Realtime Client] AudioWorklet module loaded');
+      } catch (error) {
+        console.error('[Realtime Client] Failed to load AudioWorklet, falling back to ScriptProcessorNode:', error);
+        // Fall back to ScriptProcessorNode if AudioWorklet fails
+        return this.start_audio_stream_legacy({ device_id });
+      }
+    }
+
     this.source = this.audio_context.createMediaStreamSource(this.media_stream);
-    this.processor = this.audio_context.createScriptProcessor(
+    this.processor = new AudioWorkletNode(this.audio_context, 'realtime-audio-processor');
+
+    // Handle audio data from worklet
+    this.processor.port.onmessage = (event) => {
+      if (event.data.type === 'audio_data') {
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+          return;
+        }
+
+        // Convert ArrayBuffer to Int16Array
+        const pcm16 = new Int16Array(event.data.data);
+
+        // Encode to base64
+        const base64_audio = btoa(
+          String.fromCharCode.apply(null, Array.from(new Uint8Array(pcm16.buffer)))
+        );
+
+        this.ws.send(
+          JSON.stringify({
+            type: "input_audio_buffer.append",
+            audio: base64_audio,
+          })
+        );
+      }
+    };
+
+    // AudioWorkletNode doesn't need connection to destination
+    this.source.connect(this.processor);
+
+    return this.media_stream;
+  }
+
+  // Legacy fallback for browsers that don't support AudioWorklet
+  private async start_audio_stream_legacy({
+    device_id,
+  }: {
+    device_id?: string;
+  } = {}): Promise<MediaStream> {
+    if (!this.audio_context || !this.media_stream) {
+      throw new Error('Audio context not initialized');
+    }
+
+    this.source = this.audio_context.createMediaStreamSource(this.media_stream);
+    const script_processor = this.audio_context.createScriptProcessor(
       REALTIME_AUDIO_PROCESSOR_BUFFER_SIZE,
       1,
       1
     );
 
-    this.processor.onaudioprocess = (event) => {
+    script_processor.onaudioprocess = (event) => {
       const input_data = event.inputBuffer.getChannelData(0);
 
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
@@ -208,23 +265,22 @@ export class RealtimeTranscriptionClient {
 
     // ScriptProcessorNode requires connection to destination for onaudioprocess to fire.
     // Use a muted gain node to prevent feedback while keeping the processing pipeline active.
-    this.gain = this.audio_context.createGain();
-    this.gain.gain.value = 0; // Mute the microphone monitoring
+    const gain = this.audio_context.createGain();
+    gain.gain.value = 0; // Mute the microphone monitoring
 
-    this.source.connect(this.processor);
-    this.processor.connect(this.gain);
-    this.gain.connect(this.audio_context.destination);
+    this.source.connect(script_processor);
+    script_processor.connect(gain);
+    gain.connect(this.audio_context.destination);
 
     return this.media_stream;
   }
 
   stop_audio_stream(): void {
-    if (this.gain) {
-      this.gain.disconnect();
-      this.gain = null;
-    }
-
     if (this.processor) {
+      // Clean up message handler for AudioWorkletNode
+      if (this.processor instanceof AudioWorkletNode) {
+        this.processor.port.onmessage = null;
+      }
       this.processor.disconnect();
       this.processor = null;
     }

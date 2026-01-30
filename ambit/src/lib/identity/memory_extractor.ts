@@ -1,5 +1,6 @@
 import type OpenAI from "openai";
 import { extract_response_text, is_record } from "@/lib/openai/openai_responses";
+import { get_openai_memory_model } from "@/lib/openai/openai_client";
 
 export type extracted_memory_update = {
   conversation_summary: string;
@@ -180,10 +181,10 @@ export const extract_identity_memory_update = async ({
   ];
 
   const payload: Record<string, unknown> = {
-    model: "gpt-4o-mini",
+    model: get_openai_memory_model(),
     instructions,
     input,
-    temperature: 0.2,
+    // temperature removed - not supported by gpt-5-nano
     text: {
       format: {
         type: "json_schema",
@@ -269,10 +270,10 @@ export const extract_identity_memory_update_batch = async ({
   ];
 
   const payload: Record<string, unknown> = {
-    model: "gpt-4o-mini",
+    model: get_openai_memory_model(),
     instructions,
     input,
-    temperature: 0.2,
+    // temperature removed - not supported by gpt-5-nano
     text: {
       format: {
         type: "json_schema",
