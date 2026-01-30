@@ -1,5 +1,8 @@
 import OpenAI from "openai";
-import https from "https";
+import dns from "dns";
+
+// Force IPv4 DNS resolution globally for faster routing on macOS
+dns.setDefaultResultOrder("ipv4first");
 
 export const OPENAI_BASE_URL = "https://api.openai.com/v1";
 
@@ -42,9 +45,6 @@ export const get_openai_client = (): OpenAI => {
   if (!openai_client) {
     openai_client = new OpenAI({
       apiKey: get_openai_api_key(),
-      // Force IPv4 to avoid slower IPv6 routing on some networks (3x faster on Mac)
-      // @ts-expect-error - httpAgent exists in the underlying fetch config but not in types
-      httpAgent: new https.Agent({ family: 4 }),
     });
   }
   return openai_client;
