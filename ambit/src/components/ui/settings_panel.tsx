@@ -120,60 +120,6 @@ export const SettingsPanel = ({
     set_is_mic_picker_open(false);
   };
 
-  const calendar_profile_id = recognized_profile_id ?? "anonymous";
-
-  const build_return_to = (): string => {
-    if (typeof window === "undefined") return "/";
-    return `${window.location.pathname}${window.location.search}`;
-  };
-
-  const load_calendar_status = async (): Promise<void> => {
-    set_is_calendar_loading(true);
-    set_calendar_error(null);
-    try {
-      const response = await fetch(
-        `/api/google_calendar/status?profile_id=${encodeURIComponent(calendar_profile_id)}`
-      );
-      const data = await response.json().catch(() => null);
-      if (!response.ok) {
-        const message =
-          typeof data?.error === "string" ? data.error : "Failed to load calendar status";
-        throw new Error(message);
-      }
-      set_calendar_connected(Boolean(data?.connected));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to load calendar status";
-      set_calendar_error(message);
-      set_calendar_connected(null);
-    } finally {
-      set_is_calendar_loading(false);
-    }
-  };
-
-  const disconnect_calendar = async (): Promise<void> => {
-    set_is_calendar_loading(true);
-    set_calendar_error(null);
-    try {
-      const response = await fetch("/api/google_calendar/disconnect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profile_id: calendar_profile_id }),
-      });
-      const data = await response.json().catch(() => null);
-      if (!response.ok) {
-        const message =
-          typeof data?.error === "string" ? data.error : "Failed to disconnect calendar";
-        throw new Error(message);
-      }
-      set_calendar_connected(false);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to disconnect calendar";
-      set_calendar_error(message);
-    } finally {
-      set_is_calendar_loading(false);
-    }
-  };
-
   const handle_toggle = async () => {
     const next_state = !is_open;
     set_is_open(next_state);
@@ -181,7 +127,6 @@ export const SettingsPanel = ({
     if (next_state) {
       await on_load_mics();
       await on_load_voices();
-      await load_calendar_status();
     } else {
       set_is_voice_picker_open(false);
       set_is_mic_picker_open(false);
