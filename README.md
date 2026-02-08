@@ -1,8 +1,10 @@
 # Ambit
 
-A real-time voice AI companion with face recognition and personalized memory.
+A real-time voice AI companion with face recognition, personalized memory, and a mood-reactive UI.
 
 Talk to it. It sees you, remembers you, and gets smarter over time.
+
+**120 files | 17,400+ lines of code**
 
 ---
 
@@ -32,21 +34,42 @@ That's it. Ambit opens at **http://localhost:3000**.
 ## What It Does
 
 ### Voice Conversation
-Real-time voice loop powered by OpenAI. Ambit listens, thinks, and speaks back using ElevenLabs text-to-speech.
+Real-time voice loop powered by OpenAI. Ambit listens, thinks, and speaks back using ElevenLabs text-to-speech with emotional audio tags. Responses are displayed with karaoke-style word-by-word highlighting synced to the audio.
 
 ### Face Recognition
-Uses your webcam (browser-based, nothing leaves your machine) to recognize faces and switch between user profiles automatically.
+Uses your webcam (browser-based, nothing leaves your machine) to recognize faces and switch between user profiles automatically. Each person gets their own conversation history, memory, and generated image gallery.
 
 ### Memory
-Ambit remembers things about you — preferences, facts, notes. Each person gets their own isolated memory. Memory is extracted automatically every 10 messages.
+Ambit remembers things about you — preferences, facts, notes, tags. Memory is extracted automatically every 10 messages and stored per-profile with strict isolation between users.
 
 ### Tools
-- **Camera analysis** -- "What do you see?" triggers a vision snapshot
-- **Image generation** -- Ask it to create images, saved to your profile gallery
-- **Google Calendar** -- Optional. Create, read, and manage calendar events
+Ambit has six built-in capabilities (it never calls them "tools" — it just does them):
 
-### Kiosk Mode
-Navigate to `/mouth` for a fullscreen-friendly layout optimized for small screens and touchscreens (like a Raspberry Pi display).
+- **Camera analysis** -- "What do you see?" or "How do I look?" triggers a vision snapshot from your webcam
+- **Screen analysis** -- "Look at my screen" or "What's this error?" captures and analyzes your screen content
+- **Image generation** -- Ask it to create images; they pop up as an overlay when ready and save to your profile gallery
+- **Image editing** -- "Make it darker" or "Add a sunset" modifies the last generated image
+- **Spotify control** -- Play, pause, skip, search, and control volume (optional, requires Spotify credentials)
+- **Mood control** -- The entire UI atmosphere (orb color, matrix rain, glow) shifts to match the emotional tone of the conversation
+
+### Mood-Reactive UI
+The interface responds to the conversation's emotional tone:
+
+- **Orb** -- Central visual element that pulses, breathes, and changes color based on state (amber when listening, purple when thinking, green when speaking)
+- **Matrix rain** -- Background effect with mood-reactive color palettes
+- **Glow and atmosphere** -- Colors shift across moods: neutral, excited, calm, intense, playful, warm, mysterious, sad
+
+### Profile Management
+- Create and edit profiles (name, age, interests, phone number)
+- Enroll multiple face angles per profile for better recognition
+- View and manage per-profile memory (facts, preferences, notes, tags)
+- Browse per-profile generated image gallery
+
+### Settings
+- Microphone selection
+- Voice picker (browse and preview ElevenLabs voices)
+- Voice quality toggle (quality mode with `eleven_v3` or fast mode with `eleven_flash_v2_5`)
+- Thinking sounds toggle (ambient audio while Ambit is processing)
 
 ---
 
@@ -66,13 +89,15 @@ Edit `.env.local` and fill in your API keys:
 |----------|----------|-------------|
 | `OPENAI_API_KEY` | Yes | OpenAI API key |
 | `ELEVENLABS_API_KEY` | Yes | ElevenLabs API key for text-to-speech |
-| `ELEVENLABS_VOICE_ID` | No | Default voice (can be picked in the UI instead) |
 | `OPENAI_RESPONSES_MODEL` | No | Conversation model (default: `gpt-4.1-mini`) |
 | `OPENAI_CAMERA_MODEL` | No | Vision model (default: `gpt-4.1-mini`) |
+| `OPENAI_MEMORY_MODEL` | No | Memory extraction model (default: `gpt-4.1-mini`) |
 | `OPENAI_IMAGE_MODEL` | No | Image generation model (default: `gpt-image-1.5`) |
 | `ELEVEN_TTS_MODEL` | No | TTS model (default: `eleven_v3`) |
-| `GOOGLE_CLIENT_ID` | No | Google Calendar OAuth client ID |
-| `GOOGLE_CLIENT_SECRET` | No | Google Calendar OAuth secret |
+| `AMBIT_PROMPT_MODE` | No | `compact` (default) or `verbose` — controls system prompt detail level |
+| `SPOTIFY_CLIENT_ID` | No | Spotify app client ID (enables music control) |
+| `SPOTIFY_CLIENT_SECRET` | No | Spotify app client secret |
+| `SPOTIFY_REFRESH_TOKEN` | No | Spotify OAuth refresh token |
 
 ### 2. Start the identity service
 
@@ -100,8 +125,14 @@ Open `http://localhost:3000`.
 
 ```
 ambit/                  # Next.js app (UI + API routes)
+  src/
+    app/                # Pages and API routes
+    components/         # React components (identity, mouth, ui)
+    hooks/              # React hooks (realtime STT, conversation state, etc.)
+    lib/                # Business logic (openai, identity, elevenlabs, spotify, stt)
+  public/               # Static assets (audio worklet, icons, thinking sounds)
 identity_service/       # Node/Express + SQLite backend (profiles, memory, images)
-identity_prototype/     # Standalone prototype UI for face-recognition experiments
+identity_prototype/     # Standalone prototype UI for early experiments
 ```
 
 ---
@@ -112,9 +143,10 @@ Base URL: `http://localhost:5176/api`
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
+| `/healthz` | GET | Health check |
 | `/profiles` | GET | List all profiles |
 | `/profiles` | POST | Create a profile |
-| `/profiles/:id` | GET | Get a profile |
+| `/profiles/:id` | GET | Get a profile (includes enrollments, memory, images) |
 | `/profiles/:id` | PATCH | Update a profile |
 | `/profiles/:id` | DELETE | Delete a profile |
 | `/profiles/:id/enroll` | POST | Add face enrollment |
@@ -125,7 +157,7 @@ Base URL: `http://localhost:5176/api`
 
 ---
 
-## Face Recognition Details
+## Face Recognition
 
 Face recognition runs entirely in the browser using face-api.js:
 
@@ -133,6 +165,7 @@ Face recognition runs entirely in the browser using face-api.js:
 - Matches against enrolled 128-dimensional face descriptors (Euclidean distance, threshold 0.6)
 - Requires 3 seconds of consistent match before switching profiles
 - Supports multiple enrollments per profile for better accuracy across head poses
+- Auto-recovers from camera and model loading failures
 
 To improve accuracy: capture enrollments from straight-on, left turn, and right turn.
 
@@ -147,6 +180,7 @@ To improve accuracy: capture enrollments from straight-on, left turn, and right 
 | Identity service unreachable | Ambit continues in anonymous mode. Check that `./start.sh` is running or start it manually |
 | Image generation fails | Verify your OpenAI project has image generation enabled |
 | Face recognition drops on head turns | Add more face enrollments from different angles via Edit Profile |
+| Spotify not working | Check that `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, and `SPOTIFY_REFRESH_TOKEN` are set in `.env.local` |
 
 ---
 
@@ -156,5 +190,6 @@ To improve accuracy: capture enrollments from straight-on, left turn, and right 
 - **Backend:** Express + SQLite (identity service)
 - **AI:** OpenAI Responses API, Realtime API, ElevenLabs TTS
 - **Face Recognition:** face-api.js (browser-side, no cloud uploads)
+- **Music:** Spotify Web API (optional)
 
 For a deep technical walkthrough, see `CODEBASE_DOCUMENTATION.md`.
