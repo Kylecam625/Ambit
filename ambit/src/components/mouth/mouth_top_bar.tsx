@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { SettingsPanel } from "@/components/ui/settings_panel";
 import type {
   identity_generated_image,
@@ -230,8 +231,21 @@ export const MouthTopBar = ({
         </div>
       </div>
 
-      {/* Right: settings gear */}
-      <div className="flex shrink-0 items-center">
+      {/* Right: journal + settings gear */}
+      <div className="flex shrink-0 items-center gap-1.5">
+        {/* Journal button — only visible when a profile is recognized */}
+        {recognized_profile_id && (
+          <Link
+            href={`/journal?profile_id=${encodeURIComponent(recognized_profile_id)}&name=${encodeURIComponent(recognized_label)}`}
+            className="glass-panel inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-[13px] font-semibold text-zinc-300 hover:text-amber-200 transition-colors"
+            title="Open Journal"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-400/70">
+              <path d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
+            </svg>
+            Journal
+          </Link>
+        )}
         <SettingsPanel
           is_loading_mics={is_loading_mics}
           is_loading_voices={is_loading_voices}

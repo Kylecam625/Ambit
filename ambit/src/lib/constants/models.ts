@@ -9,6 +9,9 @@ export const DEFAULT_CAMERA_MODEL = "gpt-5-nano";
 /** Default model for memory extraction. */
 export const DEFAULT_MEMORY_MODEL = "gpt-5-nano";
 
+/** Default model for journal writing (best creative writing model). */
+export const DEFAULT_JOURNAL_MODEL = "gpt-5.2";
+
 /** Default model for image generation. */
 export const DEFAULT_IMAGE_MODEL = "gpt-image-1.5";
 

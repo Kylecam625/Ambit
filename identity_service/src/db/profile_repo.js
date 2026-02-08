@@ -266,6 +266,46 @@ const create_repo = ({ db }) => {
   `
   );
 
+  // ── Journal prepared statements ──
+
+  const insert_journal_entry = db.prepare(
+    `
+    INSERT INTO journal_entries (entry_id, profile_id, entry_date, content_html, content_text, qa_transcript, mood, created_at, updated_at)
+    VALUES (@entry_id, @profile_id, @entry_date, @content_html, @content_text, @qa_transcript, @mood, @created_at, @updated_at)
+  `
+  );
+
+  const update_journal_entry_stmt = db.prepare(
+    `
+    UPDATE journal_entries
+    SET content_html = @content_html,
+        content_text = @content_text,
+        updated_at = @updated_at
+    WHERE entry_id = @entry_id
+  `
+  );
+
+  const get_journal_entry_by_date = db.prepare(
+    `
+    SELECT entry_id, profile_id, entry_date, content_html, content_text, qa_transcript, mood, created_at, updated_at
+    FROM journal_entries
+    WHERE profile_id = ? AND entry_date = ?
+  `
+  );
+
+  const list_journal_entries_by_month = db.prepare(
+    `
+    SELECT entry_id, entry_date, mood, updated_at
+    FROM journal_entries
+    WHERE profile_id = ? AND entry_date >= ? AND entry_date <= ?
+    ORDER BY entry_date ASC
+  `
+  );
+
+  const delete_journal_entry_stmt = db.prepare(
+    `DELETE FROM journal_entries WHERE entry_id = ?`
+  );
+
   const tx = db.transaction((fn) => fn());
 
   return {
@@ -515,6 +555,114 @@ const create_repo = ({ db }) => {
 
       const rows = list_generated_images.all(normalized_profile_id, safe_limit);
       return rows.map(normalize_generated_image_row).filter(Boolean);
+    },
+
+    // ── Journal methods ──
+
+    create_journal_entry({ profile_id, entry_date, content_html, content_text, qa_transcript, mood }) {
+      const normalized_profile_id = to_string(profile_id).trim();
+      const normalized_date = to_string(entry_date).trim();
+      if (!normalized_profile_id) throw new Error("profile_id is required");
+      if (!normalized_date || !/^\d{4}-\d{2}-\d{2}$/.test(normalized_date)) {
+        throw new Error("entry_date must be YYYY-MM-DD");
+      }
+
+      const created_at = now_iso();
+      const record = {
+        entry_id: uuid(),
+        profile_id: normalized_profile_id,
+        entry_date: normalized_date,
+        content_html: to_string(content_html),
+        content_text: to_string(content_text),
+        qa_transcript: qa_transcript ? JSON.stringify(qa_transcript) : null,
+        mood: to_string(mood).trim() || null,
+        created_at,
+        updated_at: created_at,
+      };
+
+      return tx(() => {
+        const profile = get_profile.get(normalized_profile_id);
+        if (!profile) throw new Error("Profile not found");
+
+        insert_journal_entry.run(record);
+        touch_profile.run({ profile_id: normalized_profile_id, updated_at: created_at });
+
+        return {
+          entry_id: record.entry_id,
+          profile_id: record.profile_id,
+          entry_date: record.entry_date,
+          content_html: record.content_html,
+          content_text: record.content_text,
+          qa_transcript: qa_transcript || null,
+          mood: record.mood,
+          created_at: record.created_at,
+          updated_at: record.updated_at,
+        };
+      });
+    },
+
+    update_journal_entry({ entry_id, content_html, content_text }) {
+      const normalized_id = to_string(entry_id).trim();
+      if (!normalized_id) throw new Error("entry_id is required");
+
+      const updated_at = now_iso();
+      update_journal_entry_stmt.run({
+        entry_id: normalized_id,
+        content_html: to_string(content_html),
+        content_text: to_string(content_text),
+        updated_at,
+      });
+
+      return { entry_id: normalized_id, updated_at };
+    },
+
+    get_journal_entry({ profile_id, entry_date }) {
+      const normalized_profile_id = to_string(profile_id).trim();
+      const normalized_date = to_string(entry_date).trim();
+      if (!normalized_profile_id || !normalized_date) return null;
+
+      const row = get_journal_entry_by_date.get(normalized_profile_id, normalized_date);
+      if (!row) return null;
+
+      return {
+        entry_id: to_string(row.entry_id).trim(),
+        profile_id: to_string(row.profile_id).trim(),
+        entry_date: to_string(row.entry_date).trim(),
+        content_html: to_string(row.content_html),
+        content_text: to_string(row.content_text),
+        qa_transcript: safe_parse_json(row.qa_transcript, null),
+        mood: to_string(row.mood).trim() || null,
+        created_at: to_string(row.created_at).trim(),
+        updated_at: to_string(row.updated_at).trim(),
+      };
+    },
+
+    list_journal_entries({ profile_id, year, month }) {
+      const normalized_profile_id = to_string(profile_id).trim();
+      if (!normalized_profile_id) return [];
+
+      const y = to_int_or_null(year);
+      const m = to_int_or_null(month);
+      if (!y || !m || m < 1 || m > 12) return [];
+
+      const start_date = `${y}-${String(m).padStart(2, "0")}-01`;
+      const last_day = new Date(y, m, 0).getDate();
+      const end_date = `${y}-${String(m).padStart(2, "0")}-${String(last_day).padStart(2, "0")}`;
+
+      const rows = list_journal_entries_by_month.all(normalized_profile_id, start_date, end_date);
+      return rows.map((row) => ({
+        entry_id: to_string(row.entry_id).trim(),
+        entry_date: to_string(row.entry_date).trim(),
+        mood: to_string(row.mood).trim() || null,
+        updated_at: to_string(row.updated_at).trim(),
+      }));
+    },
+
+    delete_journal_entry({ entry_id }) {
+      const normalized_id = to_string(entry_id).trim();
+      if (!normalized_id) throw new Error("entry_id is required");
+      delete_journal_entry_stmt.run(normalized_id);
+      return { ok: true };
     },
   };
 };

@@ -53,6 +53,22 @@ CREATE TABLE IF NOT EXISTS generated_images (
 );
 
 CREATE INDEX IF NOT EXISTS idx_generated_images_profile_id ON generated_images(profile_id);
+
+CREATE TABLE IF NOT EXISTS journal_entries (
+  entry_id TEXT PRIMARY KEY,
+  profile_id TEXT NOT NULL,
+  entry_date TEXT NOT NULL,
+  content_html TEXT NOT NULL DEFAULT '',
+  content_text TEXT NOT NULL DEFAULT '',
+  qa_transcript TEXT,
+  mood TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (profile_id) REFERENCES profiles(profile_id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_journal_profile_date ON journal_entries(profile_id, entry_date);
+CREATE INDEX IF NOT EXISTS idx_journal_profile_id ON journal_entries(profile_id);
 `;
 
 const ensure_profile_columns = (db) => {

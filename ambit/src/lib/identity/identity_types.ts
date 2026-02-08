@@ -62,3 +62,22 @@ export type identity_profile_bundle = {
   conversation_summaries: identity_conversation_summary[];
 };
 
+export type identity_journal_entry = {
+  entry_id: string;
+  profile_id: string;
+  entry_date: string;
+  content_html: string;
+  content_text: string;
+  qa_transcript: Array<{ role: string; content: string }> | null;
+  mood: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type identity_journal_entry_summary = {
+  entry_id: string;
+  entry_date: string;
+  mood: string | null;
+  updated_at: string;
+};
+

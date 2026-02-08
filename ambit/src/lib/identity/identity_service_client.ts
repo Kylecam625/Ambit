@@ -5,6 +5,8 @@ import type {
   identity_memory,
   identity_profile,
   identity_generated_image,
+  identity_journal_entry,
+  identity_journal_entry_summary,
 } from "./identity_types";
 
 const normalize_base_url = (raw: string): string => raw.trim().replace(/\/+$/, "");
@@ -293,5 +295,117 @@ export const try_identity_healthz = async ({ base_url }: { base_url: string }) =
   } catch (error) {
     return { ok: false, error: as_error_message(error) };
   }
+};
+
+// ── Journal endpoints ──
+
+export const identity_list_journal_entries = async ({
+  base_url,
+  profile_id,
+  year,
+  month,
+}: {
+  base_url: string;
+  profile_id: string;
+  year: number;
+  month: number;
+}): Promise<identity_journal_entry_summary[]> => {
+  const url = api_url({
+    base_url,
+    path: `/api/profiles/${encodeURIComponent(profile_id)}/journal?year=${year}&month=${month}`,
+  });
+  const data = await fetch_json<{ entries: identity_journal_entry_summary[] }>({ url });
+  return Array.isArray(data.entries) ? data.entries : [];
+};
+
+export const identity_get_journal_entry = async ({
+  base_url,
+  profile_id,
+  entry_date,
+}: {
+  base_url: string;
+  profile_id: string;
+  entry_date: string;
+}): Promise<identity_journal_entry | null> => {
+  const url = api_url({
+    base_url,
+    path: `/api/profiles/${encodeURIComponent(profile_id)}/journal/${encodeURIComponent(entry_date)}`,
+  });
+  try {
+    const data = await fetch_json<{ entry: identity_journal_entry }>({ url });
+    return data.entry ?? null;
+  } catch {
+    return null;
+  }
+};
+
+export const identity_create_journal_entry = async ({
+  base_url,
+  profile_id,
+  entry_date,
+  content_html,
+  content_text,
+  qa_transcript,
+  mood,
+}: {
+  base_url: string;
+  profile_id: string;
+  entry_date: string;
+  content_html: string;
+  content_text: string;
+  qa_transcript?: Array<{ role: string; content: string }> | null;
+  mood?: string | null;
+}): Promise<identity_journal_entry> => {
+  const url = api_url({
+    base_url,
+    path: `/api/profiles/${encodeURIComponent(profile_id)}/journal`,
+  });
+  const data = await fetch_json<{ entry: identity_journal_entry }>({
+    url,
+    method: "POST",
+    body: { entry_date, content_html, content_text, qa_transcript, mood },
+  });
+  return data.entry;
+};
+
+export const identity_update_journal_entry = async ({
+  base_url,
+  profile_id,
+  entry_date,
+  content_html,
+  content_text,
+}: {
+  base_url: string;
+  profile_id: string;
+  entry_date: string;
+  content_html: string;
+  content_text: string;
+}): Promise<identity_journal_entry> => {
+  const url = api_url({
+    base_url,
+    path: `/api/profiles/${encodeURIComponent(profile_id)}/journal/${encodeURIComponent(entry_date)}`,
+  });
+  const data = await fetch_json<{ entry: identity_journal_entry }>({
+    url,
+    method: "PATCH",
+    body: { content_html, content_text },
+  });
+  return data.entry;
+};
+
+export const identity_delete_journal_entry = async ({
+  base_url,
+  profile_id,
+  entry_date,
+}: {
+  base_url: string;
+  profile_id: string;
+  entry_date: string;
+}): Promise<{ ok: boolean }> => {
+  const url = api_url({
+    base_url,
+    path: `/api/profiles/${encodeURIComponent(profile_id)}/journal/${encodeURIComponent(entry_date)}`,
+  });
+  return await fetch_json<{ ok: boolean }>({ url, method: "DELETE" });
 };
 

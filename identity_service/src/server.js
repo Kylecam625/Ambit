@@ -7,6 +7,7 @@ const { ensure_schema } = require("./db/schema");
 const { create_repo } = require("./db/profile_repo");
 const { create_healthz_router } = require("./routes/healthz");
 const { create_profiles_router } = require("./routes/profiles");
+const { create_journal_router } = require("./routes/journal");
 
 const create_app = () => {
   const app = express();
@@ -31,6 +32,7 @@ const create_app = () => {
 
   app.use("/api", create_healthz_router());
   app.use("/api", create_profiles_router({ repo }));
+  app.use("/api", create_journal_router({ repo }));
 
   // Serve the prototype UI (Phase 2)
   app.use("/", express.static(static_root, { extensions: ["html"] }));

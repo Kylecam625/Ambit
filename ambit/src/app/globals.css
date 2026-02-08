@@ -345,3 +345,70 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ════════════════════════════════════════
+   Journal Editor (Tiptap)
+   ════════════════════════════════════════ */
+
+.journal-editor-content {
+  font-family: Georgia, "Times New Roman", serif;
+  line-height: 1.8;
+  color: #e4e4e7;
+}
+
+.journal-editor-content h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #fafafa;
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+  line-height: 1.3;
+}
+
+.journal-editor-content h3 {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #f4f4f5;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.journal-editor-content p {
+  margin-bottom: 1rem;
+}
+
+.journal-editor-content blockquote {
+  border-left: 3px solid rgba(245, 158, 11, 0.4);
+  padding-left: 1rem;
+  margin: 1.25rem 0;
+  color: #a1a1aa;
+  font-style: italic;
+}
+
+.journal-editor-content ul,
+.journal-editor-content ol {
+  padding-left: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.journal-editor-content li {
+  margin-bottom: 0.25rem;
+}
+
+.journal-editor-content em {
+  color: #fbbf24;
+}
+
+.journal-editor-content strong {
+  color: #fafafa;
+  font-weight: 700;
+}
+
+.journal-editor-content p.is-editor-empty:first-child::before {
+  content: "Start writing your journal...";
+  float: left;
+  color: #52525b;
+  pointer-events: none;
+  height: 0;
+  font-style: italic;
+}

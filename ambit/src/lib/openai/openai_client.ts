@@ -5,6 +5,7 @@ import {
   DEFAULT_CAMERA_MODEL,
   DEFAULT_MEMORY_MODEL,
   DEFAULT_IMAGE_MODEL,
+  DEFAULT_JOURNAL_MODEL,
   resolve_model,
 } from "@/lib/constants/models";
 
@@ -31,6 +32,9 @@ export const get_openai_memory_model = (): string =>
 
 export const get_openai_image_model = (): string =>
   resolve_model("OPENAI_IMAGE_MODEL", DEFAULT_IMAGE_MODEL);
+
+export const get_openai_journal_model = (): string =>
+  resolve_model("OPENAI_JOURNAL_MODEL", DEFAULT_JOURNAL_MODEL);
 
 export const build_openai_headers = (): Headers => {
   const headers = new Headers();
