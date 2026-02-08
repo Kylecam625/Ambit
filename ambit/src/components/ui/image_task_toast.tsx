@@ -55,21 +55,21 @@ export const ImageTaskToast = ({ ui_events }: { ui_events: ui_event[] }) => {
 
   return (
     <div className="fixed bottom-6 right-6 z-50">
-      <div className="flex items-center gap-3 rounded-2xl border border-zinc-800 bg-zinc-950/85 px-4 py-3 shadow-2xl backdrop-blur-md">
+      <div className="flex items-center gap-3 rounded-lg border-2 border-zinc-700 bg-zinc-950/90 px-4 py-3 shadow-2xl backdrop-blur-sm">
         {preview ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={preview}
             alt="Generating preview"
-            className="h-12 w-12 rounded-xl object-cover"
+            className="h-12 w-12 rounded-md object-cover"
           />
         ) : (
-          <div className="h-12 w-12 animate-pulse rounded-xl bg-zinc-800" />
+          <div className="h-12 w-12 animate-pulse rounded-md bg-zinc-800" />
         )}
 
         <div className="min-w-0">
-          <p className="text-sm font-medium text-zinc-100">Generating image…</p>
-          <p className="text-xs text-zinc-400">I&apos;ll pop it up when it&apos;s ready.</p>
+          <p className="text-sm font-bold text-white">Generating image…</p>
+          <p className="text-xs text-zinc-300">I&apos;ll pop it up when it&apos;s ready.</p>
         </div>
       </div>
     </div>

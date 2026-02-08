@@ -113,7 +113,7 @@ export default function KaraokeDebugPage() {
       const parsed = await parse_elevenlabs_stream_with_timestamps_jsonl({ reader });
       if (!parsed) throw new Error("TTS parse aborted");
 
-      const url = URL.createObjectURL(new Blob([parsed.audio_bytes], { type: "audio/mpeg" }));
+      const url = URL.createObjectURL(new Blob([parsed.audio_bytes as BlobPart], { type: "audio/mpeg" }));
       audio_url_ref.current = url;
 
       const audio = audio_ref.current ?? new Audio();

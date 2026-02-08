@@ -5,11 +5,15 @@ import {
   get_optional_elevenlabs_voice_id,
 } from "@/lib/elevenlabs/elevenlabs_env";
 import { strip_elevenlabs_v3_audio_tags } from "@/lib/elevenlabs/elevenlabs_audio_tags";
+import { bad_request, internal_error, error_response } from "@/lib/api/error_response";
+import { to_string } from "@/lib/api/validate_request";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Cache env-derived config in module scope for reuse (refreshed on each call for now to avoid stale values)
+const ELEVENLABS_TTS_BASE_URL = "https://api.elevenlabs.io/v1/text-to-speech";
+
+// Load env-derived config (refreshed on each call to avoid stale values)
 const get_cached_elevenlabs_config = () => {
   return {
     api_key: get_elevenlabs_api_key(),
@@ -23,15 +27,14 @@ const parse_request_text = async (
 ): Promise<{ text: string | null; voice_id: string | null; quality_mode: string | null; optimize_latency: number | null }> => {
   try {
     const data = (await request.json()) as { text?: string; voice_id?: string; quality_mode?: string; optimize_latency?: number } | null;
-    const text = typeof data?.text === "string" ? data.text.trim() : "";
-    const voice_id =
-      typeof data?.voice_id === "string" ? data.voice_id.trim() : "";
-    const quality_mode = 
-      typeof data?.quality_mode === "string" ? data.quality_mode.trim() : "";
+    const text = to_string(data?.text);
+    const voice_id = to_string(data?.voice_id);
+    const quality_mode = to_string(data?.quality_mode);
     const optimize_latency =
       typeof data?.optimize_latency === "number" ? data.optimize_latency : null;
     return { text: text || null, voice_id: voice_id || null, quality_mode: quality_mode || null, optimize_latency };
-  } catch {
+  } catch (error) {
+    console.warn("[TTS] Failed to parse request body:", error);
     return { text: null, voice_id: null, quality_mode: null, optimize_latency: null };
   }
 };
@@ -40,10 +43,11 @@ export async function POST(request: NextRequest): Promise<Response> {
   const { text, voice_id, quality_mode, optimize_latency } = await parse_request_text(request);
 
   if (!text) {
-    return new Response(JSON.stringify({ error: "Text is required." }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
+    return bad_request("Text is required.");
+  }
+
+  if (text.length > 5000) {
+    return bad_request("Text too long");
   }
 
   const tts_start = Date.now();
@@ -84,7 +88,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     
     // Use stream/with-timestamps endpoint for word highlighting
     const response = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${selected_voice_id}/stream/with-timestamps`,
+      `${ELEVENLABS_TTS_BASE_URL}/${selected_voice_id}/stream/with-timestamps`,
       {
         method: "POST",
         headers: {
@@ -102,10 +106,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     if (!response.ok) {
       const error_text = await response.text();
       console.error(`[TTS API] ElevenLabs error: ${error_text}`);
-      return new Response(JSON.stringify({ error: `ElevenLabs TTS failed: ${error_text}` }), {
-        status: response.status,
-        headers: { "Content-Type": "application/json" },
-      });
+      return error_response(`ElevenLabs TTS failed: ${error_text}`, response.status);
     }
 
     console.log(`[TTS API] Streaming response back to client`);
@@ -119,9 +120,6 @@ export async function POST(request: NextRequest): Promise<Response> {
   } catch (error) {
     const error_message =
       error instanceof Error ? error.message : "Failed to generate audio.";
-    return new Response(JSON.stringify({ error: error_message }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+    return internal_error(error_message);
   }
 }

@@ -129,11 +129,13 @@ export const WordHighlightedText = ({
   word_alignment,
   audio_element,
   className = "",
+  style,
 }: {
   text: string;
   word_alignment: WordAlignment[] | null;
   audio_element: HTMLAudioElement | null;
   className?: string;
+  style?: React.CSSProperties;
 }) => {
   const word_refs = useRef<(HTMLSpanElement | null)[]>([]);
   const container_ref = useRef<HTMLParagraphElement>(null);
@@ -256,7 +258,7 @@ export const WordHighlightedText = ({
   // If we don't have alignment, just render the text plainly.
   if (!alignment) {
     return (
-      <p className={`${className} select-none whitespace-pre-wrap`}>
+      <p className={`${className} select-none whitespace-pre-wrap`} style={style}>
         {typeof text === "string" ? text : ""}
       </p>
     );
@@ -273,7 +275,7 @@ export const WordHighlightedText = ({
   const highlight = active_box ? compute_highlight_box(active_box) : null;
 
   return (
-    <p ref={container_ref} className={`${className} select-none relative pb-[0.55em]`}>
+    <p ref={container_ref} className={`${className} select-none relative pb-[0.55em]`} style={style}>
       <style>{`
 @keyframes ambitKaraokePulse {
   0% { transform: translateZ(0) scale(1.04); }
@@ -285,7 +287,7 @@ export const WordHighlightedText = ({
       {/* Single highlight pill that slides with the current word (x + y across wraps) */}
       <span
         aria-hidden
-        className="absolute pointer-events-none rounded-full z-0"
+        className="absolute pointer-events-none rounded-md z-0"
         style={{
           top: 0,
           left: 0,
@@ -295,11 +297,9 @@ export const WordHighlightedText = ({
           transform: highlight
             ? `translate3d(${highlight.left}px, ${highlight.top}px, 0)`
             : "translate3d(0px, 0px, 0)",
-          background:
-            "linear-gradient(90deg, rgba(167, 139, 250, 0.0), rgba(167, 139, 250, 0.22) 18%, rgba(196, 181, 253, 0.18) 50%, rgba(167, 139, 250, 0.22) 82%, rgba(167, 139, 250, 0.0))",
-          border: "1px solid rgba(167, 139, 250, 0.18)",
-          boxShadow:
-            "0 0 20px rgba(167, 139, 250, 0.32), 0 0 10px rgba(196, 181, 253, 0.22)",
+          background: "rgba(167, 139, 250, 0.18)",
+          border: "1.5px solid rgba(167, 139, 250, 0.35)",
+          boxShadow: "none",
           transition:
             "transform 140ms linear, width 140ms linear, height 140ms linear, opacity 120ms ease-out",
           willChange: "transform, width, height, opacity",
@@ -333,7 +333,7 @@ export const WordHighlightedText = ({
                 animation: is_active
                   ? `ambitKaraokePulse ${word_duration_s}s ease-in-out both`
                   : "none",
-                textShadow: is_active ? "0 0 16px rgba(196, 181, 253, 0.20)" : "none",
+                textShadow: "none",
               }}
             >
               {word}

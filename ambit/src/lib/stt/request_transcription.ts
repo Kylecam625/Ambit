@@ -20,7 +20,7 @@ export const request_transcription = async ({
         throw new Error(parsed.error);
       }
     } catch {
-      // Fall through to generic message.
+      // Error response is not valid JSON; fall through to use raw error_text as message
     }
 
     throw new Error(error_text || "Transcription request failed.");

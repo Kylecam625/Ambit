@@ -13,7 +13,14 @@ type faceapi_runtime = {
   detectSingleFace: (
     input: HTMLVideoElement,
     options: unknown
-  ) => { withFaceLandmarks: () => { withFaceDescriptor: () => Promise<unknown> } };
+  ) => {
+    withFaceLandmarks: () => {
+      withFaceDescriptor: () => Promise<unknown>;
+      withFaceExpressions: () => {
+        withFaceDescriptor: () => Promise<unknown>;
+      };
+    };
+  };
 
   // Recognition / matching
   LabeledFaceDescriptors: new (label: string, descriptors: Float32Array[]) => unknown;
@@ -71,36 +78,76 @@ export const build_face_matcher = async ({
   return new faceapi.FaceMatcher(labeled, threshold);
 };
 
+export type face_expression = {
+  dominant: string;
+  confidence: number;
+  all: Record<string, number>;
+};
+
 export const detect_single_face_descriptor = async ({
   video_el,
   input_size = 224,
   score_threshold = 0.4,
+  with_expressions = false,
 }: {
   video_el: HTMLVideoElement;
   input_size?: number;
   score_threshold?: number;
+  with_expressions?: boolean;
 }) => {
   const faceapi = (await ensure_faceapi()) as faceapi_runtime;
 
-  const raw_result = await faceapi
-    .detectSingleFace(
-      video_el,
-      new faceapi.TinyFaceDetectorOptions({
-        inputSize: clamp(input_size, 128, 512),
-        scoreThreshold: clamp(score_threshold, 0.1, 0.95),
-      })
-    )
-    .withFaceLandmarks()
-    .withFaceDescriptor();
+  const detection_options = new faceapi.TinyFaceDetectorOptions({
+    inputSize: clamp(input_size, 128, 512),
+    scoreThreshold: clamp(score_threshold, 0.1, 0.95),
+  });
+
+  let raw_result: unknown;
+
+  if (with_expressions) {
+    raw_result = await faceapi
+      .detectSingleFace(video_el, detection_options)
+      .withFaceLandmarks()
+      .withFaceExpressions()
+      .withFaceDescriptor();
+  } else {
+    raw_result = await faceapi
+      .detectSingleFace(video_el, detection_options)
+      .withFaceLandmarks()
+      .withFaceDescriptor();
+  }
 
   if (!raw_result) return null;
   if (!is_record(raw_result)) return null;
   const descriptor = raw_result["descriptor"];
   if (!(descriptor instanceof Float32Array)) return null;
 
+  // Extract expressions if available
+  let expression: face_expression | null = null;
+  if (with_expressions) {
+    const expressions = raw_result["expressions"];
+    if (is_record(expressions)) {
+      let dominant = "neutral";
+      let highest = 0;
+      const all: Record<string, number> = {};
+
+      for (const [key, value] of Object.entries(expressions)) {
+        const num = typeof value === "number" ? value : 0;
+        all[key] = num;
+        if (num > highest) {
+          highest = num;
+          dominant = key;
+        }
+      }
+
+      expression = { dominant, confidence: highest, all };
+    }
+  }
+
   return {
     descriptor,
     detection: raw_result,
+    expression,
   };
 };
 

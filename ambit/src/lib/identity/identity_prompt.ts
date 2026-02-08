@@ -35,8 +35,8 @@ export const build_identity_instructions = ({
   };
 
   const recent_summaries = (conversation_summaries ?? [])
-    .slice(0, 10)
-    .map((s) => safe_trim(s.summary, 280));
+    .slice(0, 5)
+    .map((s) => safe_trim(s.summary, 200));
 
   console.log(`[Identity Prompt] Building for: ${profile_payload.name} (${profile_payload.profile_id})`);
 
@@ -65,4 +65,3 @@ export const build_identity_instructions = ({
     "- If memory conflicts with what the user says now, ask a quick clarifying question and update your understanding.",
   ].join("\n");
 };
-

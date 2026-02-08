@@ -36,7 +36,8 @@ export const create_conversation_id = async ({
     }
 
     return normalize_id(conversation["id"]);
-  } catch {
+  } catch (error) {
+    console.warn("[OpenAI] Failed to create conversation:", error);
     return null;
   }
 };

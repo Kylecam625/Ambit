@@ -27,11 +27,16 @@ const fetch_json = async <T>({
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;
 }): Promise<T> => {
+  const start = Date.now();
   const response = await fetch(url, {
     method,
     headers: { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+  const duration_ms = Date.now() - start;
+  console.log(
+    `[Identity] ${method} ${url} status=${response.status} duration_ms=${duration_ms}`
+  );
 
   const data = (await response.json().catch(() => null)) as T | null;
 

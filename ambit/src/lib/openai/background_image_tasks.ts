@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { identity_add_generated_image } from "@/lib/identity/identity_service_client";
 import { get_identity_service_url } from "@/lib/identity/identity_service_url";
 import { generate_photo } from "./ambit_image_generation";
+import { edit_photo } from "./ambit_image_editing";
 import { get_openai_client, get_openai_image_model } from "./openai_client";
 
 export type image_task_status = "queued" | "running" | "succeeded" | "failed";
@@ -221,7 +222,8 @@ export const start_background_generate_photo_task = ({
             image_data_url,
           });
           did_save = true;
-        } catch {
+        } catch (error) {
+          console.warn("[ImageTask] Failed to save generated image to profile:", error);
           did_save = false;
         }
       }
@@ -263,5 +265,129 @@ export const get_image_task = ({ task_id }: { task_id: string }): image_task | n
 
   const task = store.get(trimmed);
   return task ? { ...task } : null;
+};
+
+/**
+ * Returns the image_data_url of the most recently succeeded image task.
+ * Used by edit_photo to find the source image.
+ */
+export const get_last_succeeded_image_url = (): string | null => {
+  const store = get_store();
+  let latest: image_task | null = null;
+
+  for (const task of store.values()) {
+    if (task.status !== "succeeded") continue;
+    if (!task.image_data_url) continue;
+    if (!latest || task.completed_at_ms! > latest.completed_at_ms!) {
+      latest = task;
+    }
+  }
+
+  return latest?.image_data_url ?? null;
+};
+
+/**
+ * Start a background image editing task (edit an existing image).
+ */
+export const start_background_edit_photo_task = ({
+  prompt,
+  source_image_data_url,
+  size = "1024x1024",
+  quality = "high",
+  profile_id = null,
+}: {
+  prompt: string;
+  source_image_data_url: string;
+  size?: "1024x1024" | "1024x1536" | "1536x1024" | "auto";
+  quality?: "low" | "medium" | "high";
+  profile_id?: string | null;
+}): { task_id: string } => {
+  const trimmed_prompt = prompt.trim();
+  if (!trimmed_prompt) {
+    throw new Error("prompt is required");
+  }
+
+  const store = get_store();
+  prune_store(store);
+
+  const task_id = randomUUID();
+  const created_at_ms = now_ms();
+
+  store.set(task_id, {
+    task_id,
+    status: "queued",
+    prompt: `Edit: ${trimmed_prompt}`,
+    size,
+    quality,
+    profile_id,
+    created_at_ms,
+    updated_at_ms: created_at_ms,
+    completed_at_ms: null,
+    partial_image_data_url: null,
+    partial_image_index: null,
+    image_data_url: null,
+    image_saved_to_profile: false,
+    error: null,
+  });
+
+  void (async () => {
+    try {
+      update_task({ store, task_id, patch: { status: "running" } });
+
+      const openai = get_openai_client();
+      const result = await edit_photo({
+        openai,
+        prompt: trimmed_prompt,
+        source_image_data_url,
+        size,
+        quality,
+      });
+
+      if (!result.image_data_url) {
+        throw new Error("Image editing returned no image data.");
+      }
+
+      let did_save = false;
+      if (profile_id) {
+        try {
+          const base_url = get_identity_service_url();
+          await identity_add_generated_image({
+            base_url,
+            profile_id,
+            prompt: `Edit: ${trimmed_prompt}`,
+            image_data_url: result.image_data_url,
+          });
+          did_save = true;
+        } catch (error) {
+          console.warn("[ImageTask] Failed to save edited image to profile:", error);
+        }
+      }
+
+      update_task({
+        store,
+        task_id,
+        patch: {
+          status: "succeeded",
+          completed_at_ms: now_ms(),
+          image_data_url: result.image_data_url,
+          image_saved_to_profile: did_save,
+          error: null,
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      update_task({
+        store,
+        task_id,
+        patch: {
+          status: "failed",
+          completed_at_ms: now_ms(),
+          error: message || "Image editing failed.",
+        },
+      });
+    }
+  })();
+
+  return { task_id };
 };
 

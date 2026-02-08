@@ -1,9 +1,12 @@
 import { NextRequest } from "next/server";
-import { build_identity_instructions } from "@/lib/identity/identity_prompt";
+import { bad_request, internal_error } from "@/lib/api/error_response";
+import { fetch_identity_context } from "@/lib/api/fetch_identity_context";
+import { OPENAI_RESPONSE_TIMEOUT_MS, TOOL_LOOP_TIMEOUT_MS } from "@/lib/constants/timeouts";
+import { MAX_CONVERSATION_MESSAGES, MAX_TOOL_ITERATIONS, MAX_UI_EVENTS } from "@/lib/constants/limits";
 import { maybe_start_background_memory_ingest } from "@/lib/identity/background_memory_ingest";
-import { identity_get_profile } from "@/lib/identity/identity_service_client";
 import { get_identity_service_url } from "@/lib/identity/identity_service_url";
-import { get_image_task, start_background_generate_photo_task } from "@/lib/openai/background_image_tasks";
+import { get_image_task, get_last_succeeded_image_url, start_background_generate_photo_task, start_background_edit_photo_task } from "@/lib/openai/background_image_tasks";
+import { execute_spotify_action, is_spotify_configured } from "@/lib/spotify/spotify_client";
 import { get_openai_client } from "@/lib/openai/openai_client";
 import { parse_respond_request } from "@/lib/openai/openai_schemas";
 import {
@@ -11,7 +14,6 @@ import {
   create_openai_response_with_tools,
   type create_openai_response_with_tools_result,
 } from "@/lib/openai/openai_responses";
-import { MAX_CONVERSATION_MESSAGES } from "@/lib/openai/openai_constants";
 import { should_enable_web_search } from "@/lib/openai/web_search_detector";
 
 export const runtime = "nodejs";
@@ -21,13 +23,10 @@ export async function POST(request: NextRequest): Promise<Response> {
   const parsed = await parse_respond_request(request);
 
   if (!parsed) {
-    return new Response(JSON.stringify({ error: "Text is required." }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
+    return bad_request("Text is required.");
   }
 
-  const { text, history, profile_id, message_seq } = parsed;
+  const { text, history, profile_id, message_seq, detected_emotion } = parsed;
   const request_start = Date.now();
   const timing = {
     request_start,
@@ -38,44 +37,21 @@ export async function POST(request: NextRequest): Promise<Response> {
     tool_iterations: 0,
   };
   
-  console.log(`\n[API] ====== NEW REQUEST ======`);
-  console.log(`[API] User prompt: "${text}"`);
-  console.log(`[API] Profile: ${profile_id || 'anonymous'}, Message seq: ${message_seq}`);
-  console.log(`[API] History size: ${history.length} messages, ~${JSON.stringify(history).length} chars`);
-  const conversation_id = null;
+  console.log(`[API] Request: "${text.substring(0, 80)}" (profile: ${profile_id || 'anon'})`);
 
   try {
     const openai = get_openai_client();
 
-    let extra_instructions: string | null = null;
+    timing.identity_start = Date.now();
+    const { identity_instructions } = await fetch_identity_context(profile_id);
+    timing.identity_end = Date.now();
 
-    if (profile_id) {
-      try {
-        timing.identity_start = Date.now();
-        const base_url = get_identity_service_url();
-        
-        // Add 5s timeout to identity fetch
-        const identity_timeout = new Promise<never>((_, reject) => 
-          setTimeout(() => reject(new Error("Identity fetch timeout after 5s")), 5000)
-        );
-        
-        const bundle = await Promise.race([
-          identity_get_profile({ base_url, profile_id }),
-          identity_timeout
-        ]);
-        
-        timing.identity_end = Date.now();
-        console.log(`[API] Identity fetch took ${timing.identity_end - timing.identity_start}ms`);
-        extra_instructions = build_identity_instructions({
-          profile: bundle.profile,
-          memory: bundle.memory,
-          conversation_summaries: bundle.conversation_summaries,
-        });
-      } catch (err) {
-        timing.identity_end = Date.now();
-        console.log(`[API] Identity fetch failed after ${timing.identity_end - timing.identity_start}ms:`, err);
-        // Identity lookup failed; continuing as anonymous
-      }
+    let extra_instructions: string | null = identity_instructions || null;
+
+    // Inject detected facial emotion as context for the AI
+    if (detected_emotion && detected_emotion !== "neutral") {
+      const emotion_note = `FACIAL EXPRESSION (PRIVATE — do NOT quote this verbatim): The user's face currently looks ${detected_emotion}. You may naturally acknowledge this if it feels relevant, but be subtle — don't say "I can see you look ${detected_emotion}". Instead, be perceptive like a friend would.`;
+      extra_instructions = extra_instructions ? `${extra_instructions}\n\n${emotion_note}` : emotion_note;
     }
 
     if (parsed.active_image_task_id) {
@@ -97,16 +73,10 @@ If the user asks whether you're still generating the image, answer truthfully ba
     const enable_web_search = should_enable_web_search(text);
     const used_web_search = enable_web_search; // Track if web search was enabled for this request
     
-    if (enable_web_search) {
-      console.log(`[API] Web search enabled for this request`);
-    }
-    
     timing.openai_start = Date.now();
-    console.log(`[API] Sending request to OpenAI Responses API...`);
     
-    // Add 30s timeout to OpenAI request
     const openai_timeout = new Promise<never>((_, reject) => 
-      setTimeout(() => reject(new Error("OpenAI request timeout after 30s")), 30000)
+      setTimeout(() => reject(new Error(`OpenAI request timeout after ${OPENAI_RESPONSE_TIMEOUT_MS}ms`)), OPENAI_RESPONSE_TIMEOUT_MS)
     );
     
     // Use auto tool choice - let the model decide when to call tools
@@ -127,8 +97,6 @@ If the user asks whether you're still generating the image, answer truthfully ba
     ]);
     
     timing.openai_end = Date.now();
-    const openai_duration = timing.openai_end - timing.openai_start;
-    console.log(`[API] Received response from OpenAI in ${openai_duration}ms`);
 
     if (result.kind === "tool_request") {
       let pending: create_openai_response_with_tools_result = result;
@@ -139,26 +107,29 @@ If the user asks whether you're still generating the image, answer truthfully ba
         tool_steps += 1;
         timing.tool_iterations += 1;
         
-        // Timeout check: if we've been in tool loop for > 45s total, abort
         const elapsed = Date.now() - timing.openai_start;
-        if (elapsed > 45000) {
-          return new Response(
-            JSON.stringify({ error: "Tool execution timeout. Please try again." }),
-            { status: 500, headers: { "Content-Type": "application/json" } }
-          );
+        if (elapsed > TOOL_LOOP_TIMEOUT_MS) {
+          return internal_error("Tool execution timeout. Please try again.");
         }
         
-        if (tool_steps > 6) {
-          return new Response(
-            JSON.stringify({ error: "Too many tool calls in a single turn. Please try again." }),
-            { status: 500, headers: { "Content-Type": "application/json" } }
-          );
+        if (tool_steps > MAX_TOOL_ITERATIONS) {
+          return internal_error("Too many tool calls in a single turn. Please try again.");
         }
 
         const tool_name = pending.tool_request.name;
         console.log(`[API] Tool iteration ${tool_steps}: ${tool_name}`);
 
         if (tool_name === "analyze_camera_frame") {
+          return Response.json({
+            tool_request: pending.tool_request,
+            history: history.slice(-MAX_CONVERSATION_MESSAGES),
+            response_id: pending.response_id,
+            conversation_id: pending.conversation_id,
+          });
+        }
+
+        if (tool_name === "analyze_screen") {
+          // Screen analysis requires client-side screen capture, similar to camera
           return Response.json({
             tool_request: pending.tool_request,
             history: history.slice(-MAX_CONVERSATION_MESSAGES),
@@ -221,17 +192,155 @@ If the user asks whether you're still generating the image, answer truthfully ba
           continue;
         }
 
-        return new Response(JSON.stringify({ error: `Unsupported tool request: ${tool_name}` }), {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
-        });
+        if (tool_name === "edit_photo") {
+          const prompt =
+            typeof pending.tool_request.arguments?.["prompt"] === "string"
+              ? String(pending.tool_request.arguments["prompt"]).trim()
+              : "";
+          const size =
+            typeof pending.tool_request.arguments?.["size"] === "string"
+              ? (String(pending.tool_request.arguments["size"]).trim() as
+                  | "1024x1024"
+                  | "1024x1536"
+                  | "1536x1024"
+                  | "auto")
+              : undefined;
+          const quality =
+            typeof pending.tool_request.arguments?.["quality"] === "string"
+              ? (String(pending.tool_request.arguments["quality"]).trim() as
+                  | "low"
+                  | "medium"
+                  | "high")
+              : undefined;
+
+          // Get the last generated image to use as source
+          const source_image_url = get_last_succeeded_image_url();
+
+          if (!source_image_url) {
+            pending = await continue_openai_response_with_tool_output({
+              openai,
+              previous_response_id: pending.response_id,
+              conversation_id: null,
+              call_id: pending.tool_request.call_id,
+              tool_output: {
+                ok: false,
+                error: "No previously generated image found to edit. Generate an image first.",
+              },
+              extra_instructions,
+            });
+            continue;
+          }
+
+          const { task_id } = start_background_edit_photo_task({
+            prompt,
+            source_image_data_url: source_image_url,
+            size: size ?? "1024x1024",
+            quality: quality ?? "high",
+            profile_id,
+          });
+
+          ui_events.push({
+            type: "image_task_started",
+            task_id,
+            prompt: `Edit: ${prompt}`,
+            size: size ?? "1024x1024",
+            quality: quality ?? "high",
+          });
+
+          pending = await continue_openai_response_with_tool_output({
+            openai,
+            previous_response_id: pending.response_id,
+            conversation_id: null,
+            call_id: pending.tool_request.call_id,
+            tool_output: {
+              ok: true,
+              status: "started",
+              will_display_when_ready: true,
+              editing: true,
+              prompt,
+            },
+            extra_instructions,
+          });
+          continue;
+        }
+
+        if (tool_name === "set_ui_mood") {
+          const mood =
+            typeof pending.tool_request.arguments?.["mood"] === "string"
+              ? String(pending.tool_request.arguments["mood"]).trim()
+              : "neutral";
+
+          ui_events.push({
+            type: "mood_change",
+            mood,
+          });
+
+          pending = await continue_openai_response_with_tool_output({
+            openai,
+            previous_response_id: pending.response_id,
+            conversation_id: null,
+            call_id: pending.tool_request.call_id,
+            tool_output: {
+              ok: true,
+              mood_set: mood,
+              note: "The UI mood has been updated. Continue the conversation naturally.",
+            },
+            extra_instructions,
+          });
+          continue;
+        }
+
+        if (tool_name === "control_music") {
+          const action =
+            typeof pending.tool_request.arguments?.["action"] === "string"
+              ? String(pending.tool_request.arguments["action"]).trim()
+              : "";
+          const query =
+            typeof pending.tool_request.arguments?.["query"] === "string"
+              ? String(pending.tool_request.arguments["query"]).trim()
+              : undefined;
+          const volume_percent =
+            typeof pending.tool_request.arguments?.["volume_percent"] === "number"
+              ? Number(pending.tool_request.arguments["volume_percent"])
+              : undefined;
+
+          if (!is_spotify_configured()) {
+            pending = await continue_openai_response_with_tool_output({
+              openai,
+              previous_response_id: pending.response_id,
+              conversation_id: null,
+              call_id: pending.tool_request.call_id,
+              tool_output: {
+                ok: false,
+                error: "Music control is not configured yet. Spotify credentials are needed.",
+              },
+              extra_instructions,
+            });
+            continue;
+          }
+
+          const spotify_result = await execute_spotify_action({
+            action,
+            query,
+            volume_percent,
+          });
+
+          pending = await continue_openai_response_with_tool_output({
+            openai,
+            previous_response_id: pending.response_id,
+            conversation_id: null,
+            call_id: pending.tool_request.call_id,
+            tool_output: spotify_result,
+            extra_instructions,
+          });
+          continue;
+        }
+
+        return bad_request(`Unsupported tool request: ${tool_name}`);
       }
 
       if (pending.kind !== "final") {
-        return new Response(JSON.stringify({ error: "Tool loop ended unexpectedly." }), {
-          status: 500,
-          headers: { "Content-Type": "application/json" },
-        });
+        return internal_error("Tool loop ended unexpectedly.");
       }
 
       const updated_history = [
@@ -247,7 +356,7 @@ If the user asks whether you're still generating the image, answer truthfully ba
         profile_id,
         message_seq,
         updated_history,
-        conversation_id: pending.conversation_id || conversation_id || null,
+        conversation_id: pending.conversation_id || null,
       });
 
       return Response.json({
@@ -255,7 +364,7 @@ If the user asks whether you're still generating the image, answer truthfully ba
         history: updated_history.slice(-MAX_CONVERSATION_MESSAGES),
         response_id: pending.response_id,
         conversation_id: pending.conversation_id,
-        ui_events: ui_events.slice(-20),
+        ui_events: ui_events.slice(-MAX_UI_EVENTS),
         used_web_search,
       });
     }
@@ -268,15 +377,13 @@ If the user asks whether you're still generating the image, answer truthfully ba
       profile_id,
       message_seq,
       updated_history: result.updated_history,
-      conversation_id: result.conversation_id || conversation_id || null,
+      conversation_id: result.conversation_id || null,
     });
 
-    const total_duration = Date.now() - request_start;
-    const identity_time = timing.identity_end - timing.identity_start;
-    const openai_time = timing.openai_end - timing.openai_start;
-    console.log(`[API] Response: "${result.speech_text.substring(0, 150)}${result.speech_text.length > 150 ? '...' : ''}"`);
-    console.log(`[API] Total request duration: ${total_duration}ms (identity: ${identity_time}ms, openai: ${openai_time}ms, tool iterations: ${timing.tool_iterations})`);
-    console.log(`[API] ====== REQUEST COMPLETE ======\n`);
+    const total_ms = Date.now() - request_start;
+    const id_ms = timing.identity_end - timing.identity_start;
+    const ai_ms = timing.openai_end - timing.openai_start;
+    console.log(`[API] Done in ${total_ms}ms (id: ${id_ms}ms, ai: ${ai_ms}ms)`);
 
     return Response.json({
       speech_text: result.speech_text,
@@ -290,9 +397,6 @@ If the user asks whether you're still generating the image, answer truthfully ba
     const error_message =
       error instanceof Error ? error.message : "Failed to generate a response.";
 
-    return new Response(JSON.stringify({ error: error_message }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+    return internal_error(error_message);
   }
 }

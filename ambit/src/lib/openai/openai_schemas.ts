@@ -10,6 +10,7 @@ export type RequestBody = {
   profile_id?: string | null;
   message_seq?: number;
   active_image_task_id?: string | null;
+  detected_emotion?: string | null;
 };
 
 export const sanitize_history = (value: unknown): ConversationMessage[] => {
@@ -81,6 +82,8 @@ export const parse_respond_request = async (
         : 0;
     const active_image_task_id =
       typeof data?.active_image_task_id === "string" ? data.active_image_task_id.trim() : null;
+    const detected_emotion =
+      typeof data?.detected_emotion === "string" ? data.detected_emotion.trim() : null;
 
     return {
       text,
@@ -90,8 +93,10 @@ export const parse_respond_request = async (
       profile_id,
       message_seq,
       active_image_task_id,
+      detected_emotion,
     };
-  } catch {
+  } catch (error) {
+    console.warn("[Respond] Failed to parse request body:", error);
     return null;
   }
 };

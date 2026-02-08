@@ -98,16 +98,16 @@ export const VoicePicker = ({
   return (
     <div className={className} {...props}>
       <button
-        className="w-full rounded-full border border-zinc-800 bg-black/40 px-3 py-2 text-left text-sm font-semibold text-zinc-200 hover:border-zinc-700"
+        className="w-full rounded-lg border-2 border-zinc-700 bg-black/80 px-4 py-2.5 text-left text-sm font-bold text-zinc-100 hover:border-zinc-500"
         onClick={handle_toggle}
         type="button"
       >
         {selected_voice?.name ?? placeholder}
       </button>
       {is_open ? (
-        <div className="mt-2 rounded-2xl border border-zinc-800 bg-zinc-950 p-2 shadow-sm">
+        <div className="mt-2 rounded-lg border-2 border-zinc-700 bg-zinc-950 p-2 shadow-sm">
           <input
-            className="w-full rounded-full border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 focus:border-zinc-600 focus:outline-none"
+            className="w-full rounded-md border-2 border-zinc-700 bg-zinc-900 px-3 py-2.5 text-sm font-semibold text-zinc-100 focus:border-zinc-500 focus:outline-none"
             onChange={(event) => set_search_value(event.target.value)}
             placeholder="Search voices..."
             type="text"
@@ -124,12 +124,12 @@ export const VoicePicker = ({
                   return (
                     <div
                       key={voice.voice_id}
-                      className={`flex items-center justify-between rounded-xl border px-3 py-2 ${
-                        is_selected ? "border-zinc-100" : "border-zinc-800"
+                      className={`flex items-center justify-between rounded-md border-2 px-3 py-2 ${
+                        is_selected ? "border-zinc-100" : "border-zinc-700"
                       }`}
                     >
                       <button
-                        className="flex-1 text-left text-sm font-semibold text-zinc-100"
+                        className="flex-1 text-left text-sm font-bold text-white"
                         onClick={() => handle_select(voice.voice_id)}
                         type="button"
                       >
@@ -137,7 +137,7 @@ export const VoicePicker = ({
                       </button>
                       {voice.preview_url ? (
                         <button
-                          className="ml-2 rounded-full border border-zinc-700 px-3 py-1 text-xs font-semibold text-zinc-300"
+                          className="ml-2 rounded-md border-2 border-zinc-600 px-3 py-1 text-xs font-bold text-zinc-200"
                           onClick={() => handle_play(voice)}
                           type="button"
                         >

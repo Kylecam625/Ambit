@@ -14,7 +14,7 @@ export const useVoiceQuality = () => {
         return stored;
       }
     } catch {
-      // ignore localStorage errors
+      // localStorage may be unavailable in SSR or private browsing; use default quality
     }
 
     return "quality";
@@ -25,7 +25,7 @@ export const useVoiceQuality = () => {
     try {
       localStorage.setItem(STORAGE_KEY, quality);
     } catch {
-      // ignore localStorage errors
+      // localStorage may be unavailable in SSR or private browsing; quality persists in memory only
     }
   }, [quality]);
 

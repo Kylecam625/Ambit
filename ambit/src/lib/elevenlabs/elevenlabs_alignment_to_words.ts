@@ -45,6 +45,7 @@ const decode_audio_base64 = (audio_base64: string): Uint8Array | null => {
     }
     return bytes;
   } catch {
+    // base64 decoding failed (corrupted or truncated audio data)
     return null;
   }
 };
@@ -248,7 +249,7 @@ export const parse_elevenlabs_stream_with_timestamps_jsonl = async ({
       try {
         await reader.cancel();
       } catch {
-        // ignore
+        // reader.cancel() may reject if the stream is already closed
       }
       return null;
     }
@@ -260,7 +261,7 @@ export const parse_elevenlabs_stream_with_timestamps_jsonl = async ({
       try {
         await reader.cancel();
       } catch {
-        // ignore
+        // reader.cancel() may reject if the stream is already closed
       }
       return null;
     }

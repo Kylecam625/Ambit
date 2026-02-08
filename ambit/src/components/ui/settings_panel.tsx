@@ -3,6 +3,9 @@
 import { useState } from "react";
 import { ProfileManager } from "@/components/identity/profile_manager";
 import { VoicePicker } from "@/components/ui/voice_picker";
+import { MicSelector } from "@/components/ui/mic_selector";
+import { VoiceQualitySelector } from "@/components/ui/voice_quality_selector";
+import { ThinkingSoundsToggle } from "@/components/ui/thinking_sounds_toggle";
 import type {
   identity_profile_summary,
   identity_memory,
@@ -21,17 +24,15 @@ type SettingsPanelProps = {
   selected_mic_id: string | null;
   selected_voice_id: string | null;
   voice_error: string | null;
-  voice_options: Array<{ voice_id: string; name: string; preview_url: string | null }>;
-  
-  // Voice Quality
+  voice_options: Array<{
+    voice_id: string;
+    name: string;
+    preview_url: string | null;
+  }>;
   voice_quality: "quality" | "fast";
   on_voice_quality_change: (quality: "quality" | "fast") => void;
-
-  // Thinking Sounds
   thinking_sounds_enabled: boolean;
   on_thinking_sounds_change: (enabled: boolean) => void;
-
-  // Identity / Profiles
   profiles: identity_profile_summary[];
   recognized_profile_id: string | null;
   recognized_label: string;
@@ -40,7 +41,10 @@ type SettingsPanelProps = {
   is_identity_busy: boolean;
   identity_error_message: string | null;
   on_identity_refresh: () => void;
-  on_identity_delete_profile: (args: { profile_id: string; name: string }) => void;
+  on_identity_delete_profile: (args: {
+    profile_id: string;
+    name: string;
+  }) => void;
   on_identity_create_profile: (args: {
     name: string;
     age: number | null;
@@ -58,9 +62,16 @@ type SettingsPanelProps = {
     phone_number: string | null;
     sms_consent: boolean;
   }) => void;
-  on_identity_capture_enrollment: () => Promise<{ descriptor: number[]; thumbnail: string | null } | null>;
-  on_identity_add_profile_enrollment: (args: { profile_id: string }) => Promise<void> | void;
-  on_identity_view_memory: (profile_id: string) => Promise<identity_memory | null>;
+  on_identity_capture_enrollment: () => Promise<{
+    descriptor: number[];
+    thumbnail: string | null;
+  } | null>;
+  on_identity_add_profile_enrollment: (args: {
+    profile_id: string;
+  }) => Promise<void> | void;
+  on_identity_view_memory: (
+    profile_id: string
+  ) => Promise<identity_memory | null>;
   on_identity_view_generated_images: (
     profile_id: string
   ) => Promise<identity_generated_image[] | null>;
@@ -107,65 +118,31 @@ export const SettingsPanel = ({
 }: SettingsPanelProps) => {
   const [is_open, set_is_open] = useState(false);
   const [is_voice_picker_open, set_is_voice_picker_open] = useState(false);
-  const [is_mic_picker_open, set_is_mic_picker_open] = useState(false);
   const [is_profiles_open, set_is_profiles_open] = useState(false);
-
-  const selected_mic_label =
-    mic_devices.find((device) => device.device_id === selected_mic_id)?.label ??
-    "System default";
 
   const close_settings = () => {
     set_is_open(false);
     set_is_voice_picker_open(false);
-    set_is_mic_picker_open(false);
   };
 
   const handle_toggle = async () => {
     const next_state = !is_open;
     set_is_open(next_state);
-
     if (next_state) {
       await on_load_mics();
       await on_load_voices();
     } else {
       set_is_voice_picker_open(false);
-      set_is_mic_picker_open(false);
-    }
-  };
-
-  const handle_toggle_mic_picker = async () => {
-    const next_state = !is_mic_picker_open;
-    set_is_mic_picker_open(next_state);
-
-    if (next_state) {
-      await on_load_mics();
     }
   };
 
   const handle_voice_open_change = async (next_open: boolean) => {
     set_is_voice_picker_open(next_open);
-
-    if (next_open) {
-      await on_load_voices();
-    }
-  };
-
-  const handle_select_mic = (device_id: string | null) => {
-    on_select_mic(device_id);
-    set_is_mic_picker_open(false);
-    // Save to localStorage
-    if (typeof window !== "undefined") {
-      if (device_id) {
-        localStorage.setItem("ambit_selected_mic_id", device_id);
-      } else {
-        localStorage.removeItem("ambit_selected_mic_id");
-      }
-    }
+    if (next_open) await on_load_voices();
   };
 
   const handle_select_voice = (voice_id: string | null) => {
     on_select_voice(voice_id);
-    // Save to localStorage
     if (typeof window !== "undefined") {
       if (voice_id) {
         localStorage.setItem("ambit_selected_voice_id", voice_id);
@@ -177,13 +154,14 @@ export const SettingsPanel = ({
 
   return (
     <div className="relative">
-      {/* Settings Button */}
+      {/* Settings gear button */}
       <button
-        className="rounded-full border border-zinc-800/80 bg-black/30 p-3 text-zinc-300 backdrop-blur hover:border-zinc-700 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
-        onClick={handle_toggle}
+        className="glass-panel rounded-lg p-2.5 text-zinc-400 transition-colors hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+        onClick={() => void handle_toggle()}
         disabled={is_disabled}
         type="button"
         title="Settings"
+        aria-label="Open settings"
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -195,22 +173,26 @@ export const SettingsPanel = ({
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
+          aria-hidden="true"
         >
           <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.73V12a2 2 0 0 1-1 1.73l-.15.1a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.73v-.5a2 2 0 0 1 1-1.73l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
           <circle cx="12" cy="12" r="3" />
         </svg>
       </button>
 
-      {/* Settings Dropdown */}
+      {/* Settings dropdown */}
       {is_open && (
-        <div className="absolute right-0 top-12 z-50 w-[min(340px,calc(100vw-1.5rem))] rounded-2xl border border-zinc-800 bg-zinc-950/95 p-4 shadow-xl backdrop-blur">
+        <div className="glass-panel absolute right-0 top-12 z-50 w-[min(360px,calc(100vw-1.5rem))] rounded-lg p-5 shadow-2xl animate-fade-in-scale">
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-base font-semibold text-zinc-100">Settings</h3>
+              <h3 className="text-lg font-bold text-white">
+                Settings
+              </h3>
               <button
                 className="text-zinc-400 hover:text-zinc-100"
                 onClick={close_settings}
                 type="button"
+                aria-label="Close settings"
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -222,6 +204,7 @@ export const SettingsPanel = ({
                   strokeWidth="2"
                   strokeLinecap="round"
                   strokeLinejoin="round"
+                  aria-hidden="true"
                 >
                   <line x1="18" y1="6" x2="6" y2="18" />
                   <line x1="6" y1="6" x2="18" y2="18" />
@@ -229,136 +212,27 @@ export const SettingsPanel = ({
               </button>
             </div>
 
-            {/* Microphone Selection */}
-            <div className="flex flex-col gap-2">
-              <label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                Microphone
-              </label>
-              <button
-                className="flex w-full items-center justify-between gap-3 rounded-full border border-zinc-800 bg-black/40 px-3 py-2 text-left text-sm font-semibold text-zinc-200 hover:border-zinc-700"
-                onClick={() => void handle_toggle_mic_picker()}
-                type="button"
-              >
-                <span className="min-w-0 truncate">
-                  {is_loading_mics ? "Loading microphones..." : selected_mic_label}
-                </span>
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className={`shrink-0 text-zinc-400 transition-transform ${is_mic_picker_open ? "rotate-180" : ""}`}
-                  aria-hidden="true"
-                >
-                  <path d="m6 9 6 6 6-6" />
-                </svg>
-              </button>
+            <MicSelector
+              is_loading={is_loading_mics}
+              mic_devices={mic_devices}
+              selected_mic_id={selected_mic_id}
+              on_load_mics={on_load_mics}
+              on_select_mic={on_select_mic}
+            />
 
-              {is_mic_picker_open ? (
-                <div className="mt-2 max-h-56 overflow-y-auto rounded-2xl border border-zinc-800 bg-zinc-950 p-2">
-                  <div className="flex flex-col gap-1">
-                    <button
-                      className={`rounded-xl border px-3 py-2 text-left text-sm font-semibold ${
-                        selected_mic_id === null
-                          ? "border-zinc-100 text-zinc-100"
-                          : "border-zinc-800 text-zinc-300 hover:border-zinc-700"
-                      }`}
-                      onClick={() => handle_select_mic(null)}
-                      type="button"
-                    >
-                      System default
-                    </button>
-                    {mic_devices.map((device) => (
-                      <button
-                        key={device.device_id}
-                        className={`rounded-xl border px-3 py-2 text-left text-sm font-semibold ${
-                          device.device_id === selected_mic_id
-                            ? "border-zinc-100 text-zinc-100"
-                            : "border-zinc-800 text-zinc-300 hover:border-zinc-700"
-                        }`}
-                        onClick={() => handle_select_mic(device.device_id)}
-                        type="button"
-                      >
-                        <span className="block truncate">{device.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-            </div>
+            <VoiceQualitySelector
+              quality={voice_quality}
+              on_change={on_voice_quality_change}
+            />
 
-            {/* Voice Quality Mode */}
-            <div className="flex flex-col gap-2">
-              <label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                Voice Mode
-              </label>
-              <div className="flex gap-2">
-                <button
-                  className={`flex-1 rounded-full border px-4 py-2 text-sm font-semibold transition-colors ${
-                    voice_quality === "quality"
-                      ? "border-cyan-500/50 bg-cyan-500/20 text-cyan-100"
-                      : "border-zinc-800 bg-black/40 text-zinc-300 hover:border-zinc-700"
-                  }`}
-                  onClick={() => on_voice_quality_change("quality")}
-                  type="button"
-                >
-                  Quality
-                </button>
-                <button
-                  className={`flex-1 rounded-full border px-4 py-2 text-sm font-semibold transition-colors ${
-                    voice_quality === "fast"
-                      ? "border-cyan-500/50 bg-cyan-500/20 text-cyan-100"
-                      : "border-zinc-800 bg-black/40 text-zinc-300 hover:border-zinc-700"
-                  }`}
-                  onClick={() => on_voice_quality_change("fast")}
-                  type="button"
-                >
-                  Fast
-                </button>
-              </div>
-              <p className="text-xs text-zinc-500">
-                {voice_quality === "quality" 
-                  ? "v3 with emotional audio tags (slower)" 
-                  : "Flash v2.5, faster responses (no audio tags)"}
-              </p>
-            </div>
+            <ThinkingSoundsToggle
+              enabled={thinking_sounds_enabled}
+              on_change={on_thinking_sounds_change}
+            />
 
-            {/* Thinking Sounds Toggle */}
+            {/* Voice selection */}
             <div className="flex flex-col gap-2">
-              <label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                Loading Sounds
-              </label>
-              <button
-                className={`flex w-full items-center justify-between rounded-full border px-4 py-2 text-sm font-semibold transition-colors ${
-                  thinking_sounds_enabled
-                    ? "border-cyan-500/50 bg-cyan-500/20 text-cyan-100"
-                    : "border-zinc-800 bg-black/40 text-zinc-300 hover:border-zinc-700"
-                }`}
-                onClick={() => on_thinking_sounds_change(!thinking_sounds_enabled)}
-                type="button"
-              >
-                <span>{thinking_sounds_enabled ? "Enabled" : "Disabled"}</span>
-                <div className={`relative h-6 w-11 rounded-full transition-colors ${
-                  thinking_sounds_enabled ? "bg-cyan-500" : "bg-zinc-700"
-                }`}>
-                  <div className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                    thinking_sounds_enabled ? "translate-x-5" : "translate-x-0.5"
-                  }`} />
-                </div>
-              </button>
-              <p className="text-xs text-zinc-500">
-                Play ambient sounds while Ambit is thinking
-              </p>
-            </div>
-
-            {/* Voice Selection */}
-            <div className="flex flex-col gap-2">
-              <label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
+              <label className="text-sm font-bold uppercase tracking-[0.15em] text-zinc-300">
                 Voice
               </label>
               {voice_error && (
@@ -366,22 +240,28 @@ export const SettingsPanel = ({
               )}
               <VoicePicker
                 onOpenChange={handle_voice_open_change}
-                onValueChange={(voice_id) => handle_select_voice(voice_id || null)}
+                onValueChange={(voice_id) =>
+                  handle_select_voice(voice_id || null)
+                }
                 open={is_voice_picker_open}
-                placeholder={is_loading_voices ? "Loading voices..." : "Select a voice..."}
+                placeholder={
+                  is_loading_voices ? "Loading voices..." : "Select a voice..."
+                }
                 value={selected_voice_id ?? ""}
                 voices={voice_options}
               />
             </div>
 
-            {/* Profiles */}
+            {/* Profiles shortcut */}
             <div className="flex flex-col gap-2">
-              <label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
+              <label className="text-sm font-bold uppercase tracking-[0.15em] text-zinc-300">
                 Profiles
               </label>
-              <p className="text-xs text-zinc-400">{profiles.length} total</p>
+              <p className="text-sm text-zinc-400">
+                {profiles.length} total
+              </p>
               <button
-                className="rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-left text-sm font-semibold text-zinc-200 hover:border-zinc-600 disabled:opacity-50"
+                className="rounded-lg border-2 border-zinc-700 bg-zinc-950 px-4 py-2.5 text-left text-sm font-bold text-zinc-100 hover:border-zinc-500 disabled:opacity-50"
                 onClick={() => {
                   close_settings();
                   set_is_profiles_open(true);
@@ -396,27 +276,31 @@ export const SettingsPanel = ({
         </div>
       )}
 
-      {/* Profiles Modal */}
-      {is_profiles_open ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center p-4">
+      {/* Profiles modal */}
+      {is_profiles_open && (
+        <div className="fixed inset-0 z-40 overflow-y-auto">
           <div
-            className="absolute inset-0 bg-black/70"
+            className="fixed inset-0 bg-black/80 backdrop-blur-lg"
             onClick={() => set_is_profiles_open(false)}
           />
+          <div className="flex min-h-full items-center justify-center p-3 sm:p-6">
           <div
-            className="relative w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-2xl border border-zinc-800 bg-zinc-950 p-4 shadow-xl"
+            className="glass-panel relative w-full max-w-4xl rounded-2xl p-5 sm:p-7 shadow-2xl animate-fade-in-scale"
             onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-label="Manage profiles"
           >
             <div className="flex items-start justify-between gap-3">
-              <div className="flex flex-col gap-1">
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
+              <div className="flex flex-col gap-1.5">
+                <p className="text-sm font-bold uppercase tracking-[0.15em] text-zinc-300">
                   Profiles
                 </p>
-                <p className="text-sm text-zinc-300">Manage profiles and enrollments.</p>
+                <p className="text-base text-zinc-200">
+                  Manage profiles and enrollments.
+                </p>
               </div>
-
               <button
-                className="rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 disabled:opacity-50"
+                className="shrink-0 rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-2.5 text-sm font-bold text-zinc-100 disabled:opacity-50 hover:border-zinc-500 transition-colors"
                 onClick={() => set_is_profiles_open(false)}
                 disabled={is_identity_busy}
                 type="button"
@@ -425,7 +309,7 @@ export const SettingsPanel = ({
               </button>
             </div>
 
-            <div className="mt-4">
+            <div className="mt-5">
               <ProfileManager
                 profiles={profiles}
                 is_camera_running={is_identity_camera_running}
@@ -446,8 +330,9 @@ export const SettingsPanel = ({
               />
             </div>
           </div>
+          </div>
         </div>
-      ) : null}
+      )}
     </div>
   );
 };

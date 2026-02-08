@@ -13,6 +13,7 @@ export const get_identity_service_url = (): string => {
     const trimmed = typeof raw === "string" ? raw.trim() : "";
     return trimmed || DEFAULT_IDENTITY_SERVICE_URL;
   } catch {
+    // localStorage may be unavailable in SSR or private browsing; use env default
     return DEFAULT_IDENTITY_SERVICE_URL;
   }
 };

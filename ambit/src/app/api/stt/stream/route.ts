@@ -1,4 +1,9 @@
 import { NextRequest } from "next/server";
+import { bad_request, internal_error } from "@/lib/api/error_response";
+import {
+  validate_audio_file,
+  is_validation_error,
+} from "@/lib/api/validate_audio_file";
 import { transcribe_audio_stream } from "@/lib/stt/transcribe_audio_stream";
 import { get_default_stt_config } from "@/lib/stt/stt_config";
 import { TranscriptionError } from "@/lib/stt/stt_errors";
@@ -9,13 +14,10 @@ export const dynamic = "force-dynamic";
 export async function POST(request: NextRequest) {
   try {
     const form_data = await request.formData();
-    const audio_file = form_data.get("audio");
+    const validation = validate_audio_file(form_data);
 
-    if (!audio_file || !(audio_file instanceof Blob)) {
-      return new Response(
-        JSON.stringify({ error: "Audio file is required" }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
-      );
+    if (is_validation_error(validation)) {
+      return bad_request(validation.error);
     }
 
     const config = get_default_stt_config();
@@ -25,7 +27,7 @@ export async function POST(request: NextRequest) {
       async start(controller) {
         try {
           for await (const delta of transcribe_audio_stream(
-            audio_file,
+            validation.file,
             config
           )) {
             const sse_message = `data: ${JSON.stringify(delta)}\n\n`;
@@ -60,11 +62,8 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    const error_message =
-      error instanceof Error ? error.message : "Unknown error";
-    return new Response(JSON.stringify({ error: error_message }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+    return internal_error(
+      error instanceof Error ? error.message : "Unknown error"
+    );
   }
 }

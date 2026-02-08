@@ -2,6 +2,7 @@ import {
   get_elevenlabs_api_key,
   get_optional_elevenlabs_voice_id,
 } from "@/lib/elevenlabs/elevenlabs_env";
+import { error_response, internal_error } from "@/lib/api/error_response";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -84,9 +85,9 @@ export async function GET(): Promise<Response> {
 
     if (!response.ok) {
       const error_text = await response.text();
-      return new Response(
-        JSON.stringify({ error: `ElevenLabs voices failed: ${error_text}` }),
-        { status: response.status, headers: { "Content-Type": "application/json" } }
+      return error_response(
+        `ElevenLabs voices failed: ${error_text}`,
+        response.status
       );
     }
 
@@ -94,13 +95,18 @@ export async function GET(): Promise<Response> {
     const voices = normalize_voices(data);
     const default_voice_id = get_optional_elevenlabs_voice_id();
 
-    return Response.json({ voices, default_voice_id });
+    return Response.json(
+      { voices, default_voice_id },
+      {
+        headers: {
+          "Cache-Control": "public, max-age=300, s-maxage=600",
+        },
+      }
+    );
   } catch (error) {
-    const error_message =
+    const message =
       error instanceof Error ? error.message : "Failed to load voices.";
-    return new Response(JSON.stringify({ error: error_message }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+    console.error("[Voices] Error fetching ElevenLabs voices:", message);
+    return internal_error(message);
   }
 }

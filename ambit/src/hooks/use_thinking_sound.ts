@@ -1,83 +1,132 @@
 import { useEffect, useRef } from "react";
 
-const THINKING_SOUND = "/thinkingsounds/Untitled%20video%20-%20Made%20with%20Clipchamp.mp3";
+const THINKING_SOUND_URL =
+  "/thinkingsounds/Untitled%20video%20-%20Made%20with%20Clipchamp.mp3";
 
-export const useThinkingSound = (is_thinking: boolean, enabled: boolean = true) => {
+const TARGET_VOLUME = 0.4;
+const FADE_MS = 600;
+
+/**
+ * Plays a looping "thinking" sound while `is_thinking` is true.
+ *
+ * Key design choices:
+ * - Reuses a single HTMLAudioElement across play/stop cycles (no orphaned elements).
+ * - Uses `audio.loop = true` for reliable looping instead of manual forward/backward hacks.
+ * - Fades volume in/out so starts and stops aren't jarring.
+ * - `want_playing_ref` resolves the race between async `play()` and the React effect lifecycle.
+ */
+export const useThinkingSound = (
+  is_thinking: boolean,
+  enabled: boolean = true,
+) => {
   const audio_ref = useRef<HTMLAudioElement | null>(null);
-  const direction_ref = useRef<"forward" | "backward">("forward");
-  const animation_frame_ref = useRef<number | null>(null);
-  const last_time_ref = useRef<number>(0);
+  const fade_ref = useRef<number | null>(null);
+  const want_playing_ref = useRef(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (!enabled) return; // Skip if disabled
 
-    const animate_playback = (current_time: number) => {
-      const audio = audio_ref.current;
-      if (!audio || audio.paused) return;
+    const should_play = is_thinking && enabled;
+    want_playing_ref.current = should_play;
 
-      const delta = (current_time - last_time_ref.current) / 1000;
-      last_time_ref.current = current_time;
+    // ── helpers ──
 
-      if (direction_ref.current === "forward") {
-        // Playing forward normally, check if we hit the end
-        if (audio.currentTime >= audio.duration - 0.01) {
-          direction_ref.current = "backward";
-        }
-      } else {
-        // Playing backward, manually decrement time
-        audio.currentTime = Math.max(0, audio.currentTime - delta);
-        
-        if (audio.currentTime <= 0.01) {
-          direction_ref.current = "forward";
-          audio.currentTime = 0;
-        }
+    const cancel_fade = () => {
+      if (fade_ref.current !== null) {
+        cancelAnimationFrame(fade_ref.current);
+        fade_ref.current = null;
       }
-
-      animation_frame_ref.current = requestAnimationFrame(animate_playback);
     };
 
-    if (is_thinking) {
-      // Create new audio element
-      if (audio_ref.current) {
-        audio_ref.current.pause();
-        audio_ref.current = null;
+    const fade = (
+      audio: HTMLAudioElement,
+      to: number,
+      done?: () => void,
+    ) => {
+      cancel_fade();
+      const from = audio.volume;
+      if (Math.abs(from - to) < 0.01) {
+        audio.volume = to;
+        done?.();
+        return;
+      }
+      const t0 = performance.now();
+      const tick = (now: number) => {
+        const p = Math.min((now - t0) / FADE_MS, 1);
+        audio.volume = Math.min(1, Math.max(0, from + (to - from) * p));
+        if (p < 1) {
+          fade_ref.current = requestAnimationFrame(tick);
+        } else {
+          fade_ref.current = null;
+          done?.();
+        }
+      };
+      fade_ref.current = requestAnimationFrame(tick);
+    };
+
+    // ── start / stop ──
+
+    if (should_play) {
+      // Lazily create and reuse one audio element
+      let audio = audio_ref.current;
+      if (!audio) {
+        audio = new Audio(THINKING_SOUND_URL);
+        audio.loop = true;
+        audio.preload = "auto";
+        audio_ref.current = audio;
       }
 
-      const audio = new Audio(THINKING_SOUND);
-      audio.volume = 0.4; // 40% volume
-      audio_ref.current = audio;
-
-      direction_ref.current = "forward";
+      cancel_fade();
       audio.currentTime = 0;
-      last_time_ref.current = performance.now();
-      
-      audio.play().catch((error) => {
-        console.warn("[ThinkingSound] Failed to play:", error);
-      });
+      audio.volume = 0;
 
-      animation_frame_ref.current = requestAnimationFrame(animate_playback);
-    } else {
-      // Stop thinking sound
-      if (audio_ref.current) {
-        audio_ref.current.pause();
-        audio_ref.current.currentTime = 0;
-        audio_ref.current = null;
+      const play_promise = audio.play();
+      if (play_promise) {
+        play_promise
+          .then(() => {
+            // Guard: only fade in if we still want to be playing.
+            // Covers the case where is_thinking toggled off before the
+            // browser resolved the play() promise.
+            if (want_playing_ref.current) {
+              fade(audio!, TARGET_VOLUME);
+            } else {
+              audio!.pause();
+              audio!.currentTime = 0;
+            }
+          })
+          .catch((e) => {
+            // AbortError is expected when pause() beats play() — ignore it.
+            if (e.name !== "AbortError") {
+              console.warn("[ThinkingSound] Playback failed:", e);
+            }
+          });
       }
-      
-      if (animation_frame_ref.current !== null) {
-        cancelAnimationFrame(animation_frame_ref.current);
-        animation_frame_ref.current = null;
+    } else if (audio_ref.current) {
+      const audio = audio_ref.current;
+      if (!audio.paused) {
+        fade(audio, 0, () => {
+          audio.pause();
+          audio.currentTime = 0;
+        });
       }
     }
 
-    return () => {
-      if (animation_frame_ref.current !== null) {
-        cancelAnimationFrame(animation_frame_ref.current);
-      }
+    // Effect cleanup: only cancel the in-progress fade animation.
+    // Don't pause the audio here — let the *next* effect handle the
+    // transition so fade-out actually gets a chance to run.
+    return cancel_fade;
+  }, [is_thinking, enabled]);
+
+  // Full teardown on component unmount
+  useEffect(
+    () => () => {
+      if (fade_ref.current !== null) cancelAnimationFrame(fade_ref.current);
       if (audio_ref.current) {
         audio_ref.current.pause();
+        audio_ref.current.src = "";
+        audio_ref.current = null;
       }
-    };
-  }, [is_thinking, enabled]);
+    },
+    [],
+  );
 };

@@ -85,6 +85,7 @@ export const capture_thumbnail_data_url = ({
   try {
     return canvas.toDataURL(mime, quality);
   } catch {
+    // canvas.toDataURL() can fail with SecurityError on tainted canvases
     return null;
   }
 };
@@ -131,6 +132,7 @@ export const capture_frame_data_url = ({
   try {
     return canvas.toDataURL(mime, quality);
   } catch {
+    // canvas.toDataURL() can fail with SecurityError on tainted canvases
     return null;
   }
 };
@@ -151,6 +153,7 @@ const blob_to_data_url = async (blob: Blob): Promise<string | null> => {
     });
     return result;
   } catch {
+    // FileReader may fail on unsupported blob types; return null to let caller handle it
     return null;
   }
 };
@@ -228,7 +231,7 @@ export const capture_frame_data_url_async = async ({
           // Some browsers support ImageBitmap.close()
           (bitmap as unknown as { close?: () => void }).close?.();
         } catch {
-          // ignore
+          // ImageBitmap.close() is not supported in all browsers; safe to ignore
         }
       }
     }
@@ -241,6 +244,7 @@ export const capture_frame_data_url_async = async ({
       return data_url;
     }
   } catch {
+    // ImageCapture API unavailable or failed; caller falls through to null
     return null;
   }
 

@@ -96,6 +96,16 @@ export const GeneratedImageOverlay = ({
     };
   }, [ui_events]);
 
+  // Escape key to dismiss
+  useEffect(() => {
+    if (!image_data_url) return;
+    const handle_key = (e: KeyboardEvent) => {
+      if (e.key === "Escape") dismiss();
+    };
+    window.addEventListener("keydown", handle_key);
+    return () => window.removeEventListener("keydown", handle_key);
+  }, [image_data_url]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     return () => clear_timers();
   }, []);
@@ -109,19 +119,19 @@ export const GeneratedImageOverlay = ({
       }`}
     >
       <button
-        className="absolute inset-0 cursor-default bg-black/60 backdrop-blur-md backdrop-saturate-150"
+        className="absolute inset-0 cursor-default bg-black/80 backdrop-blur-lg backdrop-saturate-150"
         type="button"
         aria-label="Close image"
         onClick={dismiss}
       />
 
-      <div className="relative w-full max-w-2xl">
-        <div className="rounded-2xl border border-zinc-800 bg-zinc-950/90 p-3 shadow-2xl">
+      <div className="relative w-full max-w-2xl animate-fade-in-scale">
+        <div className="glass-panel rounded-lg p-3 shadow-2xl">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={image_data_url}
             alt="Generated"
-            className="h-auto w-full rounded-xl object-contain"
+            className="h-auto w-full rounded-md object-contain"
           />
         </div>
       </div>

@@ -77,6 +77,7 @@ const load_string = (key: string): string | null => {
     const trimmed = typeof raw === "string" ? raw.trim() : "";
     return trimmed ? trimmed : null;
   } catch {
+    // localStorage may be unavailable (SSR, private browsing, or storage quota exceeded)
     return null;
   }
 };
@@ -88,6 +89,7 @@ const load_int = (key: string): number => {
     const parsed = Number.parseInt(String(raw || ""), 10);
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
   } catch {
+    // localStorage may be unavailable (SSR, private browsing, or storage quota exceeded)
     return 0;
   }
 };
@@ -118,6 +120,7 @@ export const load_session_conversation_state = (
     const raw = window.localStorage.getItem(keys.conversation);
     conversation_history = raw ? sanitize_conversation_history({ value: JSON.parse(raw) }) : [];
   } catch {
+    // localStorage or JSON.parse failed; start with empty history
     conversation_history = [];
   }
 
@@ -163,6 +166,7 @@ export const persist_session_conversation_state = ({
 
     window.localStorage.setItem(keys.message_seq, String(message_seq || 0));
   } catch {
+    // localStorage write failed (quota exceeded or unavailable); state persists in memory only
     return;
   }
 };
@@ -182,6 +186,7 @@ export const clear_session_conversation_state = (profile_id: string | null = nul
     window.localStorage.removeItem(keys.conversation_id);
     window.localStorage.removeItem(keys.message_seq);
   } catch {
+    // localStorage unavailable; clear only affects in-memory state
     return;
   }
 };

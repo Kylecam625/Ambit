@@ -1,8 +1,42 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0c0c12;
+  --foreground: #ededed;
+
+  /* ─── State palette ─── */
+  --color-listening: #f59e0b;
+  --color-thinking: #a855f7;
+  --color-speaking: #34d399;
+  --color-idle: #3f3f46;
+
+  --color-listening-rgb: 245, 158, 11;
+  --color-thinking-rgb: 168, 85, 247;
+  --color-speaking-rgb: 52, 211, 153;
+  --color-idle-rgb: 63, 63, 70;
+
+  /* Accent */
+  --color-accent: #f59e0b;
+
+  /* ─── Mood palette (overridden via [data-mood] attribute) ─── */
+  --mood-primary: #a855f7;
+  --mood-primary-rgb: 168, 85, 247;
+  --mood-secondary: #6366f1;
+  --mood-secondary-rgb: 99, 102, 241;
+  --mood-glow-opacity: 0.06;
+
+  /* ─── Orb ─── */
+  --orb-size: clamp(150px, 26vmin, 260px);
+
+  /* ─── Typography ─── */
+  --text-label: clamp(12px, 1.4vw, 14px);
+  --text-body: clamp(15px, 2vw, 18px);
+  --text-response: clamp(17px, 2.4vw, 22px);
+
+  /* ─── Glass tokens ─── */
+  --glass-bg: rgba(8, 8, 14, 0.93);
+  --glass-border: rgba(255, 255, 255, 0.10);
+  --glass-blur: 20px;
 }
 
 @theme inline {
@@ -12,11 +46,10 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  height: 100%;
+  overflow: hidden;
 }
 
 body {
@@ -24,4 +57,291 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans), ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
     Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+}
+
+/* ════════════════════════════════════════
+   Ambient Background
+   ════════════════════════════════════════ */
+
+.ambient-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background: var(--background);
+}
+
+.ambient-bg::after {
+  content: "";
+  position: absolute;
+  width: 60%;
+  height: 50%;
+  top: 10%;
+  left: 20%;
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(80px);
+  transition: background-color 0.8s ease, opacity 0.8s ease;
+  opacity: 0;
+}
+
+/* State-driven ambient colors */
+.ambient-listening::after { background-color: var(--color-listening); opacity: 0.06; }
+.ambient-thinking::after  { background-color: var(--color-thinking); opacity: 0.07; }
+.ambient-speaking::after  { background-color: var(--color-speaking); opacity: 0.06; }
+.ambient-idle::after      { background-color: var(--color-accent); opacity: 0.02; }
+
+/* ════════════════════════════════════════
+   Glass Panel
+   ════════════════════════════════════════ */
+
+.glass-panel {
+  background: var(--glass-bg);
+  border: 1.5px solid var(--glass-border);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+}
+
+/* ════════════════════════════════════════
+   Waveform Box
+   ════════════════════════════════════════ */
+
+.waveform-box {
+  background: #06060c;
+  border: 1.5px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 0 40px rgba(100, 80, 200, 0.06),
+    0 4px 24px rgba(0, 0, 0, 0.6);
+}
+
+.response-panel {
+  background: #08080e;
+  border: 1.5px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* ════════════════════════════════════════
+   Orb Animations
+   ════════════════════════════════════════ */
+
+@keyframes orb-breathe {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.02); }
+}
+
+@keyframes orb-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.7; transform: scale(0.98); }
+}
+
+/* ════════════════════════════════════════
+   Bar Visualizer Enhancements
+   ════════════════════════════════════════ */
+
+/* Per-bar solid colors */
+.bar-listening {
+  background: linear-gradient(to top, rgba(245, 158, 11, 0.5), rgba(245, 158, 11, 0.9));
+}
+
+.bar-thinking {
+  background: linear-gradient(to top, rgba(168, 85, 247, 0.45), rgba(168, 85, 247, 0.85));
+}
+
+.bar-speaking {
+  background: linear-gradient(to top, rgba(52, 211, 153, 0.5), rgba(52, 211, 153, 0.9));
+}
+
+.bar-idle {
+  background: linear-gradient(to top, rgba(245, 158, 11, 0.15), rgba(245, 158, 11, 0.45));
+}
+
+/* ════════════════════════════════════════
+   Thinking Dots
+   ════════════════════════════════════════ */
+
+@keyframes thinking-dots {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+  40%           { opacity: 1;   transform: scale(1); }
+}
+
+.thinking-dot {
+  animation: thinking-dots 1.4s ease-in-out infinite both;
+}
+
+.thinking-dot:nth-child(2) { animation-delay: 0.16s; }
+.thinking-dot:nth-child(3) { animation-delay: 0.32s; }
+
+/* ════════════════════════════════════════
+   Entrance Animations
+   ════════════════════════════════════════ */
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-in-scale {
+  from { opacity: 0; transform: scale(0.88); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.5s ease-out both;
+}
+
+.animate-fade-in-scale {
+  animation: fade-in-scale 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.4s ease-out both;
+}
+
+/* Staggered delays */
+.delay-100 { animation-delay: 0.1s; }
+.delay-200 { animation-delay: 0.2s; }
+.delay-300 { animation-delay: 0.3s; }
+.delay-400 { animation-delay: 0.4s; }
+
+/* ════════════════════════════════════════
+   Matrix / High-Tech Enhancements
+   ════════════════════════════════════════ */
+
+/* Faint CRT scanline overlay — cool-toned for cyberpunk feel */
+.ambient-bg::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(100, 80, 200, 0.012) 2px,
+    rgba(100, 80, 200, 0.012) 4px
+  );
+}
+
+/* ════════════════════════════════════════
+   Mood-Reactive UI System
+   ════════════════════════════════════════ */
+
+/* Mood: Neutral (default) */
+[data-mood="neutral"] {
+  --mood-primary: #a855f7;
+  --mood-primary-rgb: 168, 85, 247;
+  --mood-secondary: #6366f1;
+  --mood-secondary-rgb: 99, 102, 241;
+  --mood-glow-opacity: 0.06;
+}
+
+/* Mood: Excited */
+[data-mood="excited"] {
+  --mood-primary: #f59e0b;
+  --mood-primary-rgb: 245, 158, 11;
+  --mood-secondary: #ef4444;
+  --mood-secondary-rgb: 239, 68, 68;
+  --mood-glow-opacity: 0.12;
+}
+
+/* Mood: Calm */
+[data-mood="calm"] {
+  --mood-primary: #06b6d4;
+  --mood-primary-rgb: 6, 182, 212;
+  --mood-secondary: #3b82f6;
+  --mood-secondary-rgb: 59, 130, 246;
+  --mood-glow-opacity: 0.05;
+}
+
+/* Mood: Intense */
+[data-mood="intense"] {
+  --mood-primary: #ef4444;
+  --mood-primary-rgb: 239, 68, 68;
+  --mood-secondary: #dc2626;
+  --mood-secondary-rgb: 220, 38, 38;
+  --mood-glow-opacity: 0.14;
+}
+
+/* Mood: Playful */
+[data-mood="playful"] {
+  --mood-primary: #ec4899;
+  --mood-primary-rgb: 236, 72, 153;
+  --mood-secondary: #f59e0b;
+  --mood-secondary-rgb: 245, 158, 11;
+  --mood-glow-opacity: 0.10;
+}
+
+/* Mood: Warm */
+[data-mood="warm"] {
+  --mood-primary: #f97316;
+  --mood-primary-rgb: 249, 115, 22;
+  --mood-secondary: #eab308;
+  --mood-secondary-rgb: 234, 179, 8;
+  --mood-glow-opacity: 0.09;
+}
+
+/* Mood: Mysterious */
+[data-mood="mysterious"] {
+  --mood-primary: #7c3aed;
+  --mood-primary-rgb: 124, 58, 237;
+  --mood-secondary: #1e1b4b;
+  --mood-secondary-rgb: 30, 27, 75;
+  --mood-glow-opacity: 0.08;
+}
+
+/* Mood: Sad */
+[data-mood="sad"] {
+  --mood-primary: #6366f1;
+  --mood-primary-rgb: 99, 102, 241;
+  --mood-secondary: #475569;
+  --mood-secondary-rgb: 71, 85, 105;
+  --mood-glow-opacity: 0.04;
+}
+
+/* Mood ambient glow — overlays on top of state-driven ambient */
+.mood-glow::after {
+  content: "";
+  position: fixed;
+  width: 80%;
+  height: 60%;
+  top: 5%;
+  left: 10%;
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(100px);
+  background: radial-gradient(
+    ellipse at center,
+    rgba(var(--mood-primary-rgb), var(--mood-glow-opacity)),
+    rgba(var(--mood-secondary-rgb), calc(var(--mood-glow-opacity) * 0.5)),
+    transparent 70%
+  );
+  transition: all 1.5s ease;
+  z-index: 1;
+}
+
+/* Mood bar accent colors */
+.bar-mood-accent {
+  box-shadow: 0 0 8px rgba(var(--mood-primary-rgb), 0.3);
+}
+
+/* ════════════════════════════════════════
+   Reduced Motion
+   ════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

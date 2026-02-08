@@ -25,7 +25,14 @@ export const MouthWaves = ({
   const bar_class = state_to_bar_class(state);
 
   return (
-    <div className="flex-1 rounded-[clamp(56px,10vw,120px)] border border-zinc-800 bg-gradient-to-b from-zinc-950 to-black p-[clamp(10px,2.2vw,18px)] shadow-2xl">
+    <div
+      className="flex-1 border border-zinc-800 bg-gradient-to-b from-zinc-950 to-black shadow-2xl"
+      style={{
+        borderRadius: "var(--radius-wave)",
+        padding: "var(--space-card-padding)",
+      }}
+      aria-hidden="true"
+    >
       <div className="h-full w-full rounded-[clamp(44px,9vw,110px)] bg-black/40 p-[clamp(8px,2vw,16px)] ring-1 ring-zinc-700/40">
         <BarVisualizer
           state={state}

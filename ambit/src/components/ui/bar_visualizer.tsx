@@ -182,16 +182,16 @@ const idle_params_for_state = (
   switch (state) {
     case "speaking":
       // Fallback when TTS audio analysis isn't available yet.
-      return { speed: 1.25, amplitude: 0.42, baseline: 0.05 };
+      return { speed: 1.25, amplitude: 0.65, baseline: 0.15 };
     case "listening":
-      return { speed: 1.05, amplitude: 0.32, baseline: 0.04 };
+      return { speed: 1.05, amplitude: 0.55, baseline: 0.12 };
     case "thinking":
-      return { speed: 0.75, amplitude: 0.26, baseline: 0.04 };
+      return { speed: 0.75, amplitude: 0.45, baseline: 0.10 };
     case "connecting":
-      return { speed: 0.9, amplitude: 0.20, baseline: 0.03 };
+      return { speed: 0.9, amplitude: 0.40, baseline: 0.08 };
     case "initializing":
     default:
-      return { speed: 0.8, amplitude: 0.16, baseline: 0.03 };
+      return { speed: 0.8, amplitude: 0.35, baseline: 0.08 };
   }
 };
 
@@ -294,14 +294,17 @@ export const BarVisualizer = ({
   const alignment = centerAlign ? "items-center" : "items-end";
 
   return (
-    <div className={`flex w-full gap-1 ${alignment} ${className}`}>
+    <div aria-hidden="true" className={`flex w-full gap-[2px] sm:gap-1 ${alignment} ${className}`}>
       {bar_heights.map((height, index) => (
         <div
           key={index}
-          className={`flex-1 rounded-full ${barClassName} will-change-transform`}
+          className={`flex-1 rounded-sm ${barClassName} will-change-[height]`}
           style={{
             height: `${height}%`,
-            transition: can_use_audio ? "height 0.08s ease-out" : "height 0.15s ease-out",
+            transition: can_use_audio
+              ? "height 0.06s ease-out, box-shadow 0.12s ease"
+              : "height 0.12s ease-out, box-shadow 0.2s ease",
+            minWidth: 2,
           }}
         />
       ))}

@@ -19,14 +19,14 @@ export const analyze_camera_frame = async ({
   }
 
   const instructions = [
-    "You are a vision system for a small robot.",
-    "Analyze the provided camera image and answer the user's question.",
+    "You are the vision system for Ambit, a curious spoken-voice creature.",
+    "Analyze the camera image and answer the user's question concisely.",
     "",
     "Rules:",
-    "- Be concrete and describe what is visible.",
-    "- If you are uncertain, say so briefly.",
-    "- Avoid sensitive inference (no guessing personal attributes).",
-    "- Keep it concise (2-6 sentences).",
+    "- Describe what is actually visible. Be concrete.",
+    "- If uncertain, say so briefly.",
+    "- No guessing personal attributes (age, ethnicity, etc.).",
+    "- Keep it to 2-6 sentences.",
   ].join("\n");
 
   const focus_line = typeof focus === "string" && focus.trim() ? `Focus: ${focus.trim()}` : "";
@@ -47,7 +47,10 @@ export const analyze_camera_frame = async ({
     tool_choice: "none",
   };
 
+  const start = Date.now();
   const response = await openai_responses_create({ openai, payload });
+  const duration_ms = Date.now() - start;
+  console.log(`[OpenAI] vision responses.create duration_ms=${duration_ms}`);
   return extract_response_text(response).trim();
 };
 

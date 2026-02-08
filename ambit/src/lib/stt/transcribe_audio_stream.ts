@@ -13,6 +13,8 @@ export async function* transcribe_audio_stream(
   config: TranscriptionConfig
 ): AsyncGenerator<StreamDelta> {
   const openai = get_openai_client();
+  const start = Date.now();
+  let first_delta_at = 0;
 
   try {
     const file_to_upload = new File([audio_blob], "audio.webm", {
@@ -23,6 +25,7 @@ export async function* transcribe_audio_stream(
       file: file_to_upload,
       model: config.model,
       response_format: config.response_format as "text",
+      language: config.language ?? "en",
       stream: true,
     });
 
@@ -31,23 +34,41 @@ export async function* transcribe_audio_stream(
     for await (const chunk of stream) {
       if (chunk.type === "transcript.text.delta") {
         accumulated_text += chunk.delta;
+        if (!first_delta_at) {
+          first_delta_at = Date.now();
+          console.log(
+            `[OpenAI] audio.transcriptions.stream first_delta_ms=${first_delta_at - start}`
+          );
+        }
         yield { type: "delta", text: chunk.delta };
         continue;
       }
 
       if (chunk.type === "transcript.text.segment") {
         accumulated_text += chunk.text;
+        if (!first_delta_at) {
+          first_delta_at = Date.now();
+          console.log(
+            `[OpenAI] audio.transcriptions.stream first_delta_ms=${first_delta_at - start}`
+          );
+        }
         yield { type: "delta", text: chunk.text };
         continue;
       }
 
       if (chunk.type === "transcript.text.done") {
         accumulated_text = chunk.text;
+        const duration_ms = Date.now() - start;
+        console.log(
+          `[OpenAI] audio.transcriptions.stream done duration_ms=${duration_ms}`
+        );
         yield { type: "done", full_text: accumulated_text };
         return;
       }
     }
 
+    const duration_ms = Date.now() - start;
+    console.log(`[OpenAI] audio.transcriptions.stream done duration_ms=${duration_ms}`);
     yield {
       type: "done",
       full_text: accumulated_text,

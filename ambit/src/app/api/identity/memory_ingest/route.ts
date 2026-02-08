@@ -27,7 +27,8 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   try {
     body = (await request.json()) as request_body | null;
-  } catch {
+  } catch (error) {
+    console.warn("[Memory Ingest] Failed to parse request body:", error);
     body = null;
   }
 

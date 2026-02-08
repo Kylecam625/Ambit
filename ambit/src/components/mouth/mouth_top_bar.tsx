@@ -10,15 +10,8 @@ import type { ReactNode } from "react";
 
 type tone = "neutral" | "ok" | "warn" | "bad";
 
-const tone_border: Record<tone, string> = {
-  neutral: "border-zinc-800/80",
-  ok: "border-emerald-700/40",
-  warn: "border-amber-700/40",
-  bad: "border-red-700/40",
-};
-
 const tone_dot: Record<tone, string> = {
-  neutral: "bg-zinc-400/70",
+  neutral: "bg-zinc-500",
   ok: "bg-emerald-400",
   warn: "bg-amber-400",
   bad: "bg-red-400",
@@ -37,7 +30,7 @@ const Chip = ({
 }) => {
   return (
     <div
-      className={`inline-flex min-w-0 items-center gap-2 whitespace-nowrap rounded-full border bg-black/30 px-3 py-1.5 text-[12px] text-zinc-100 backdrop-blur ${tone_border[tone]} ${className}`}
+      className={`glass-panel inline-flex min-w-0 items-center gap-2 whitespace-nowrap rounded-md px-3.5 py-2 text-[13px] font-semibold text-zinc-200 ${className}`}
       title={title}
     >
       {children}
@@ -46,10 +39,29 @@ const Chip = ({
 };
 
 const Dot = ({ tone = "neutral" }: { tone?: tone }) => (
-  <span className={`h-2 w-2 shrink-0 rounded-full ${tone_dot[tone]}`} aria-hidden="true" />
+  <span className={`h-2 w-2 shrink-0 rounded-sm ${tone_dot[tone]}`} aria-hidden="true" />
 );
 
 const capitalize = (value: string) => (value ? value[0]!.toUpperCase() + value.slice(1) : value);
+
+const EMOTION_EMOJI: Record<string, string> = {
+  happy: "\u{1F60A}",
+  sad: "\u{1F614}",
+  angry: "\u{1F620}",
+  fearful: "\u{1F628}",
+  disgusted: "\u{1F612}",
+  surprised: "\u{1F632}",
+};
+
+const MOOD_EMOJI: Record<string, string> = {
+  excited: "\u{26A1}",
+  calm: "\u{1F30A}",
+  intense: "\u{1F525}",
+  playful: "\u{2728}",
+  warm: "\u{2600}\uFE0F",
+  mysterious: "\u{1F319}",
+  sad: "\u{1F327}\uFE0F",
+};
 
 export const MouthTopBar = ({
   is_loading_mics,
@@ -90,6 +102,9 @@ export const MouthTopBar = ({
   state_label,
   state_tone,
   is_connected,
+
+  detected_emotion = null,
+  ui_mood = null,
 }: {
   // STT / voice settings
   is_loading_mics: boolean;
@@ -151,13 +166,11 @@ export const MouthTopBar = ({
   state_label: string;
   state_tone: tone;
   is_connected: boolean;
-}) => {
-  const selected_mic_label =
-    mic_devices.find((d) => d.device_id === selected_mic_id)?.label ?? "System";
-  const selected_voice_label =
-    voice_options.find((v) => v.voice_id === selected_voice_id)?.name ??
-    (selected_voice_id ? "Voice" : "Auto");
 
+  // Emotion
+  detected_emotion?: string | null;
+  ui_mood?: string | null;
+}) => {
   const identity_value = identity_pill_value ?? (recognized_label || "Anonymous");
   const identity_tone =
     identity_pill_tone ??
@@ -165,45 +178,60 @@ export const MouthTopBar = ({
       ? "ok"
       : "warn");
   const identity_title = identity_error_message
-    ? `Identity: ${identity_value} • ${identity_error_message}`
+    ? `Identity: ${identity_value} \u2022 ${identity_error_message}`
     : `Identity: ${identity_value}`;
   const connection_tone: tone = is_connected ? "ok" : "warn";
-  const should_show_audio = Boolean(selected_mic_id) || Boolean(selected_voice_id);
 
   return (
-    <div className="flex items-center justify-between gap-3">
-      <div className="flex min-w-0 flex-1 items-center gap-2">
+    <div className="flex items-center justify-between gap-2 animate-fade-in delay-100">
+      {/* Left: status chips */}
+      <div className="flex min-w-0 flex-1 items-center gap-1.5">
         <Chip
           tone={state_tone}
-          title={`State: ${capitalize(state_label)} • ${is_connected ? "Online" : "Offline"}`}
+          title={`State: ${capitalize(state_label)} \u2022 ${is_connected ? "Online" : "Offline"}`}
         >
           <Dot tone={connection_tone} />
-          <span className="font-semibold">{capitalize(state_label)}</span>
-          <span className="text-zinc-600">•</span>
-          <span className="text-zinc-400">{is_connected ? "Online" : "Offline"}</span>
+          <span className="font-medium">{capitalize(state_label)}</span>
         </Chip>
 
         <Chip tone={identity_tone} className="min-w-0" title={identity_title}>
           <Dot tone={identity_tone} />
-          <span className="min-w-0 truncate">{identity_value}</span>
+          <span className="min-w-0 truncate max-w-[120px]">{identity_value}</span>
         </Chip>
 
-        {should_show_audio ? (
-          <Chip
-            tone="neutral"
-            className="hidden min-w-0 lg:inline-flex"
-            title={`Mic: ${selected_mic_label} • Voice: ${selected_voice_label}`}
-          >
-            <span className="text-zinc-500">Mic</span>
-            <span className="min-w-0 max-w-[220px] truncate">{selected_mic_label}</span>
-            <span className="text-zinc-700">/</span>
-            <span className="text-zinc-500">Voice</span>
-            <span className="min-w-0 max-w-[220px] truncate">{selected_voice_label}</span>
+        <div
+          className="transition-all duration-700 ease-in-out overflow-hidden"
+          style={{
+            opacity: detected_emotion && detected_emotion !== "neutral" ? 0.7 : 0,
+            maxWidth: detected_emotion && detected_emotion !== "neutral" ? "160px" : "0px",
+            transform: detected_emotion && detected_emotion !== "neutral" ? "scale(1)" : "scale(0.9)",
+          }}
+        >
+          <Chip tone="neutral" className="min-w-0" title={`Expression: ${detected_emotion}`}>
+            <span className="min-w-0 truncate max-w-[100px] text-[11px]">
+              {EMOTION_EMOJI[detected_emotion ?? ""] ?? ""} {capitalize(detected_emotion ?? "")}
+            </span>
           </Chip>
-        ) : null}
+        </div>
+
+        <div
+          className="transition-all duration-700 ease-in-out overflow-hidden"
+          style={{
+            opacity: ui_mood && ui_mood !== "neutral" ? 0.7 : 0,
+            maxWidth: ui_mood && ui_mood !== "neutral" ? "160px" : "0px",
+            transform: ui_mood && ui_mood !== "neutral" ? "scale(1)" : "scale(0.9)",
+          }}
+        >
+          <Chip tone="ok" className="min-w-0" title={`Mood: ${ui_mood}`}>
+            <span className="min-w-0 truncate max-w-[100px] text-[11px]">
+              {MOOD_EMOJI[ui_mood ?? ""] ?? ""} {capitalize(ui_mood ?? "")}
+            </span>
+          </Chip>
+        </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-2">
+      {/* Right: settings gear */}
+      <div className="flex shrink-0 items-center">
         <SettingsPanel
           is_loading_mics={is_loading_mics}
           is_loading_voices={is_loading_voices}
@@ -242,4 +270,3 @@ export const MouthTopBar = ({
     </div>
   );
 };
-

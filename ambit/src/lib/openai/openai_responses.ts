@@ -1,10 +1,14 @@
 import type OpenAI from "openai";
 import {
   DEVELOPER_PROMPT,
-  MAX_CONVERSATION_MESSAGE_CHARS,
+  MAX_OUTPUT_TOKENS,
   SYSTEM_PROMPT,
 } from "./openai_constants";
-import { ambit_tools, type ambit_tool_name } from "./ambit_tools";
+import {
+  MAX_CONVERSATION_MESSAGES,
+  MAX_CONVERSATION_MESSAGE_CHARS,
+} from "@/lib/constants/limits";
+import { ambit_tools, select_ambit_tools, type ambit_tool_name } from "./ambit_tools";
 import { get_openai_responses_model } from "./openai_client";
 
 export type ConversationMessage = {
@@ -19,6 +23,18 @@ const normalize_string = (value: unknown): string | null => {
   const trimmed = typeof value === "string" ? value.trim() : "";
   return trimmed ? trimmed : null;
 };
+
+const trim_message_content = (value: string): string => value.trim().slice(0, MAX_CONVERSATION_MESSAGE_CHARS);
+
+export const trim_history_messages = (
+  history: ConversationMessage[]
+): ConversationMessage[] =>
+  history
+    .slice(-MAX_CONVERSATION_MESSAGES)
+    .map((message) => ({
+      role: message.role,
+      content: trim_message_content(message.content),
+    }));
 
 export const build_instructions = ({
   extra_instructions,
@@ -88,6 +104,7 @@ const parse_tool_arguments = (value: unknown): Record<string, unknown> => {
     const parsed = JSON.parse(value) as unknown;
     return is_record(parsed) ? parsed : {};
   } catch {
+    // Malformed tool arguments JSON; fall back to empty object
     return {};
   }
 };
@@ -126,7 +143,10 @@ const extract_first_tool_call = (response: Record<string, unknown>): extracted_t
     if (
       name !== "analyze_camera_frame" &&
       name !== "generate_photo" &&
-      name !== "send_text_message"
+      name !== "edit_photo" &&
+      name !== "set_ui_mood" &&
+      name !== "control_music" &&
+      name !== "analyze_screen"
     ) {
       console.warn(`[openai_responses] Ignoring unknown tool call: ${name}`);
       continue;
@@ -169,7 +189,35 @@ export const openai_responses_create = async ({
     throw new Error("OpenAI client is missing responses.create().");
   }
 
-  const response = await (create as (...args: unknown[]) => Promise<unknown>).call(responses, payload);
+  const start = Date.now();
+  const model =
+    typeof payload["model"] === "string" ? payload["model"] : "unknown";
+  const payload_json = JSON.stringify(payload);
+  const payload_bytes = Buffer.byteLength(payload_json, "utf8");
+  const input_messages = Array.isArray(payload["input"]) ? payload["input"].length : 1;
+  const input_chars = Array.isArray(payload["input"])
+    ? payload["input"].reduce((total, item) => {
+        if (!is_record(item)) return total;
+        const content = item["content"];
+        return typeof content === "string" ? total + content.length : total;
+      }, 0)
+    : 0;
+  const tools_count = Array.isArray(payload["tools"]) ? payload["tools"].length : 0;
+  const instructions_chars =
+    typeof payload["instructions"] === "string" ? payload["instructions"].length : 0;
+  const max_output_tokens =
+    typeof payload["max_output_tokens"] === "number" ? payload["max_output_tokens"] : 0;
+  const response = await (create as (...args: unknown[]) => Promise<unknown>).call(
+    responses,
+    payload
+  );
+  const duration_ms = Date.now() - start;
+  console.log(
+    `[OpenAI] responses.create model=${model} duration_ms=${duration_ms} ` +
+      `bytes=${payload_bytes} input_msgs=${input_messages} input_chars=${input_chars} ` +
+      `tools=${tools_count} instructions_chars=${instructions_chars} ` +
+      `max_output_tokens=${max_output_tokens}`
+  );
   if (!is_record(response)) {
     throw new Error("OpenAI responses.create() returned a non-object response.");
   }
@@ -197,7 +245,7 @@ export const create_openai_response = async ({
   enable_web_search?: boolean;
 }) => {
   const input_with_history: ConversationMessage[] = [
-    ...history,
+    ...trim_history_messages(history),
     { role: "user", content: text },
   ];
 
@@ -216,6 +264,8 @@ export const create_openai_response = async ({
     model: get_openai_responses_model(),
     instructions,
     input: openai_input,
+    max_output_tokens: MAX_OUTPUT_TOKENS,
+    truncation: "auto", // Let OpenAI handle context overflow gracefully
   };
 
   if (tools.length > 0) {
@@ -292,27 +342,40 @@ export const create_openai_response_with_tools = async ({
   enable_web_search?: boolean;
 }): Promise<create_openai_response_with_tools_result> => {
   const input_with_history: ConversationMessage[] = [
-    ...history,
+    ...trim_history_messages(history),
     { role: "user", content: text },
   ];
 
   const instructions = build_instructions({ extra_instructions });
 
-  // Always expose all tools - let the model decide when to use them
-  const tools = enable_web_search 
-    ? [{ type: "web_search" }, ...ambit_tools]
-    : ambit_tools;
+  const tools = select_ambit_tools({
+    text,
+    enable_web_search,
+    forced_tool_name,
+  });
+  const tool_names = tools
+    .map((tool) => (is_record(tool) && typeof tool["name"] === "string" ? tool["name"] : null))
+    .filter((name): name is string => Boolean(name));
+  console.log(
+    `[OpenAI] Tool scope: ${tool_names.length ? tool_names.join(", ") : "none"} ` +
+    `(web_search=${enable_web_search})`
+  );
 
   const payload: Record<string, unknown> = {
     model: get_openai_responses_model(),
     instructions,
     input: input_with_history,
-    tools,
-    tool_choice: forced_tool_name
-      ? { type: "function", name: forced_tool_name }
-      : "auto",
-    parallel_tool_calls: false, // Enforce single tool call per turn for simpler flow
+    max_output_tokens: MAX_OUTPUT_TOKENS,
+    truncation: "auto", // Let OpenAI handle context overflow gracefully
   };
+
+  if (tools.length > 0) {
+    payload["tools"] = tools;
+    payload["tool_choice"] = forced_tool_name
+      ? { type: "function", name: forced_tool_name }
+      : "auto";
+    payload["parallel_tool_calls"] = false; // Enforce single tool call per turn for simpler flow
+  }
 
   const response = await openai_responses_create({ openai, payload });
   const response_id = normalize_string(response["id"]);
@@ -400,6 +463,8 @@ export const continue_openai_response_with_tool_output = async ({
     tools,
     tool_choice: "auto",
     parallel_tool_calls: false, // Enforce single tool call per turn for simpler flow
+    max_output_tokens: MAX_OUTPUT_TOKENS,
+    truncation: "auto", // Let OpenAI handle context overflow gracefully
   };
 
   if (normalized_conversation_id) {

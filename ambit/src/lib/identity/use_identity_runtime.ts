@@ -26,6 +26,7 @@ import {
   detect_single_face_descriptor,
   match_face_descriptor,
   type identity_match_profile,
+  type face_expression,
 } from "@/lib/identity/face_recognition";
 import {
   capture_thumbnail_data_url,
@@ -37,7 +38,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const MATCH_THRESHOLD = 0.6;
 const CONFIRM_MS = 3000;
 const RECOGNITION_GRACE_MS = 2000;
-const CANDIDATE_GRACE_MS = 650;
+const CANDIDATE_GRACE_MS = 1500;
 const NO_FACE_TIMEOUT_MS = 30_000;
 const DETECTION_INTERVAL_MS = 30;
 const CAMERA_BUSY_RETRY_INTERVAL_MS = 5000;
@@ -61,6 +62,7 @@ export type identity_runtime = {
   profiles: identity_profile_summary[];
   recognized_profile_id: string | null;
   is_detected: boolean;
+  detected_emotion: face_expression | null;
 
   is_models_loaded: boolean;
   models_error: string | null;
@@ -134,9 +136,28 @@ export const useIdentityRuntime = ({
 
   const [is_detected, set_is_detected] = useState(false);
   const [recognized_profile_id, set_recognized_profile_id] = useState<string | null>(null);
+  const [detected_emotion, set_detected_emotion] = useState<face_expression | null>(null);
 
   const [is_profile_action_running, set_is_profile_action_running] = useState(false);
   const [profile_action_error, set_profile_action_error] = useState<string | null>(null);
+
+  // Refs for the detection loop – these persist across effect restarts so that
+  // confirmation state, grace periods, and expiration tracking aren't lost when
+  // dependencies like active_profile_id or face_matcher change.
+  const face_matcher_ref = useRef<unknown>(null);
+  const active_profile_id_ref = useRef(active_profile_id);
+  const on_change_active_profile_id_ref = useRef(on_change_active_profile_id);
+  const on_identity_expired_ref = useRef(on_identity_expired);
+  const last_confirmed_profile_id_ref = useRef<string | null>(null);
+  const last_confirmed_at_ref = useRef(0);
+  const last_face_seen_at_ref = useRef(0);
+  const expired_profile_id_ref = useRef<string | null>(null);
+
+  // Keep callback/value refs in sync on every render.
+  face_matcher_ref.current = face_matcher;
+  active_profile_id_ref.current = active_profile_id;
+  on_change_active_profile_id_ref.current = on_change_active_profile_id;
+  on_identity_expired_ref.current = on_identity_expired;
 
   const refresh_profiles = useCallback(async () => {
     const base_url = service_url.trim();
@@ -148,7 +169,8 @@ export const useIdentityRuntime = ({
         list.map(async (p) => {
           try {
             return await identity_get_profile({ base_url, profile_id: p.profile_id });
-          } catch {
+          } catch (error) {
+            console.warn(`[Identity] Failed to fetch profile ${p.profile_id}:`, error);
             return null;
           }
         })
@@ -307,7 +329,10 @@ export const useIdentityRuntime = ({
     return () => window.clearInterval(id);
   }, [is_camera_running, is_profile_action_running, refresh_profiles]);
 
-  // Detection + matching loop
+  // Detection + matching loop.
+  // Uses refs for face_matcher, active_profile_id, callbacks, and confirmation
+  // tracking so that dependency changes (profile refresh, activation) don't
+  // restart the loop and lose in-progress recognition state.
   useEffect(() => {
     if (!is_camera_running || !is_models_loaded) return;
 
@@ -315,10 +340,6 @@ export const useIdentityRuntime = ({
     let candidate_profile_id: string | null = null;
     let candidate_started_at = 0;
     let candidate_last_seen_at = 0;
-    let last_face_seen_at = 0;
-    let did_expire = false;
-    let last_confirmed_profile_id: string | null = null;
-    let last_confirmed_at = 0;
 
     const loop = async () => {
       while (!cancelled) {
@@ -333,20 +354,23 @@ export const useIdentityRuntime = ({
           video_el,
           // Lower confidence threshold reduces “dropouts” on slight head turns.
           score_threshold: 0.4,
+          with_expressions: true,
         }).catch(() => null);
         if (!result) {
           set_is_detected(false);
+          set_detected_emotion(null);
+
+          const confirmed_id = last_confirmed_profile_id_ref.current;
+          const confirmed_at = last_confirmed_at_ref.current;
           const should_keep_recognition = Boolean(
-            last_confirmed_profile_id &&
-              last_confirmed_at > 0 &&
-              now - last_confirmed_at < RECOGNITION_GRACE_MS
+            confirmed_id && confirmed_at > 0 && now - confirmed_at < RECOGNITION_GRACE_MS
           );
           if (should_keep_recognition) {
-            set_recognized_profile_id(last_confirmed_profile_id);
+            set_recognized_profile_id(confirmed_id);
           } else {
             set_recognized_profile_id(null);
-            last_confirmed_profile_id = null;
-            last_confirmed_at = 0;
+            last_confirmed_profile_id_ref.current = null;
+            last_confirmed_at_ref.current = 0;
           }
 
           const should_keep_candidate = Boolean(
@@ -360,15 +384,17 @@ export const useIdentityRuntime = ({
             candidate_last_seen_at = 0;
           }
 
+          const active_id = active_profile_id_ref.current;
+          const face_seen_at = last_face_seen_at_ref.current;
           const should_expire =
-            !did_expire &&
-            Boolean(active_profile_id) &&
-            last_face_seen_at > 0 &&
-            now - last_face_seen_at >= NO_FACE_TIMEOUT_MS;
+            active_id &&
+            expired_profile_id_ref.current !== active_id &&
+            face_seen_at > 0 &&
+            now - face_seen_at >= NO_FACE_TIMEOUT_MS;
 
           if (should_expire) {
-            did_expire = true;
-            on_identity_expired();
+            expired_profile_id_ref.current = active_id;
+            on_identity_expired_ref.current();
           }
 
           await sleep(DETECTION_INTERVAL_MS);
@@ -376,10 +402,15 @@ export const useIdentityRuntime = ({
         }
 
         set_is_detected(true);
-        last_face_seen_at = now;
+        last_face_seen_at_ref.current = now;
+
+        // Update detected emotion from face expressions
+        if (result.expression) {
+          set_detected_emotion(result.expression);
+        }
 
         const match = await match_face_descriptor({
-          face_matcher,
+          face_matcher: face_matcher_ref.current,
           descriptor: result.descriptor,
         });
 
@@ -413,25 +444,26 @@ export const useIdentityRuntime = ({
 
         if (confirmed && label) {
           set_recognized_profile_id(label);
-          last_confirmed_profile_id = label;
-          last_confirmed_at = now;
+          last_confirmed_profile_id_ref.current = label;
+          last_confirmed_at_ref.current = now;
 
           // Switch context to the currently confirmed profile.
-          if (active_profile_id !== label) {
-            on_change_active_profile_id(label);
+          const active_id = active_profile_id_ref.current;
+          if (active_id !== label) {
+            on_change_active_profile_id_ref.current(label);
           }
         } else {
+          const confirmed_id = last_confirmed_profile_id_ref.current;
+          const confirmed_at = last_confirmed_at_ref.current;
           const should_keep_recognition = Boolean(
-            last_confirmed_profile_id &&
-              last_confirmed_at > 0 &&
-              now - last_confirmed_at < RECOGNITION_GRACE_MS
+            confirmed_id && confirmed_at > 0 && now - confirmed_at < RECOGNITION_GRACE_MS
           );
           if (should_keep_recognition) {
-            set_recognized_profile_id(last_confirmed_profile_id);
+            set_recognized_profile_id(confirmed_id);
           } else {
             set_recognized_profile_id(null);
-            last_confirmed_profile_id = null;
-            last_confirmed_at = 0;
+            last_confirmed_profile_id_ref.current = null;
+            last_confirmed_at_ref.current = 0;
           }
         }
 
@@ -443,15 +475,7 @@ export const useIdentityRuntime = ({
     return () => {
       cancelled = true;
     };
-  }, [
-    is_camera_running,
-    is_models_loaded,
-    face_matcher,
-    active_profile_id,
-    on_change_active_profile_id,
-    on_identity_expired,
-    video_ref,
-  ]);
+  }, [is_camera_running, is_models_loaded, video_ref]);
 
   const capture_profile_enrollment = useCallback(async () => {
     if (is_profile_action_running) return null;
@@ -688,7 +712,8 @@ export const useIdentityRuntime = ({
       try {
         const bundle = await identity_get_profile({ base_url, profile_id });
         return bundle.memory;
-      } catch {
+      } catch (error) {
+        console.warn("[Identity] Failed to load profile memory:", error);
         return null;
       }
     },
@@ -700,7 +725,8 @@ export const useIdentityRuntime = ({
       const base_url = service_url.trim();
       try {
         return await identity_list_generated_images({ base_url, profile_id, limit: 50 });
-      } catch {
+      } catch (error) {
+        console.warn("[Identity] Failed to load generated images:", error);
         return null;
       }
     },
@@ -755,7 +781,8 @@ export const useIdentityRuntime = ({
         }
 
         return null;
-      } catch {
+      } catch (error) {
+        console.warn("[Identity] Failed to delete memory item:", error);
         return null;
       }
     },
@@ -769,6 +796,7 @@ export const useIdentityRuntime = ({
     profiles,
     recognized_profile_id,
     is_detected,
+    detected_emotion,
     is_models_loaded,
     models_error,
     is_camera_running,

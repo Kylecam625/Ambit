@@ -1,6 +1,6 @@
 import type OpenAI from "openai";
 import { is_record } from "./openai_responses";
-import { get_openai_image_model } from "./openai_client";
+import { DEFAULT_IMAGE_MODEL, resolve_model } from "@/lib/constants/models";
 
 const as_string = (value: unknown): string =>
   typeof value === "string" ? value.trim() : "";
@@ -14,7 +14,7 @@ export const generate_photo = async ({
   openai,
   prompt,
   size = "1024x1024",
-  quality = "high",
+  quality = "medium",
 }: {
   openai: OpenAI;
   prompt: string;
@@ -31,7 +31,7 @@ export const generate_photo = async ({
     ["1024x1024", "1024x1536", "1536x1024", "auto"] as const,
     "1024x1024"
   );
-  const safe_quality = as_enum(quality, ["low", "medium", "high"] as const, "high");
+  const safe_quality = as_enum(quality, ["low", "medium", "high"] as const, "medium");
 
   const output_format = "jpeg" as const;
 
@@ -43,16 +43,21 @@ export const generate_photo = async ({
     throw new Error("OpenAI client is missing images.generate().");
   }
 
+  const start = Date.now();
   const response = (await (generate as (...args: unknown[]) => Promise<unknown>).call(
     images,
     {
-      model: get_openai_image_model(),
+      model: resolve_model("OPENAI_IMAGE_MODEL", DEFAULT_IMAGE_MODEL),
       prompt: trimmed_prompt,
       size: safe_size,
       quality: safe_quality,
       output_format,
     }
   )) as unknown;
+  const duration_ms = Date.now() - start;
+  console.log(
+    `[OpenAI] images.generate size=${safe_size} quality=${safe_quality} duration_ms=${duration_ms}`
+  );
 
   if (!is_record(response)) {
     throw new Error("OpenAI images response is not an object.");
