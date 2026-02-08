@@ -159,6 +159,12 @@ export const useRealtimeStt = ({
     set_is_tts_playing(false);
     set_word_alignment(null);
     set_tts_text("");
+    // Restore Spotify volume when audio is stopped (barge-in, cancel, etc.)
+    fetch("/api/spotify/volume", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "restore" }),
+    }).catch(() => {});
   }, []);
 
   const cancel_tts = useCallback(() => {
@@ -256,11 +262,23 @@ export const useRealtimeStt = ({
         audio.onplay = () => {
           set_is_generating_tts(false);
           set_is_tts_playing(true);
+          // Duck Spotify volume while speaking (fire-and-forget)
+          fetch("/api/spotify/volume", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "duck" }),
+          }).catch(() => {});
         };
         audio.onpause = () => set_is_tts_playing(false);
         audio.onerror = () => {
           set_is_generating_tts(false);
           set_is_tts_playing(false);
+          // Restore Spotify volume on error (fire-and-forget)
+          fetch("/api/spotify/volume", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "restore" }),
+          }).catch(() => {});
         };
         audio.onended = () => {
           set_is_tts_playing(false);
@@ -270,6 +288,12 @@ export const useRealtimeStt = ({
             URL.revokeObjectURL(url);
             audio_url_ref.current = null;
           }
+          // Restore Spotify volume after speaking (fire-and-forget)
+          fetch("/api/spotify/volume", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "restore" }),
+          }).catch(() => {});
         };
         await audio.play().catch(() => set_is_tts_playing(false));
       } catch (error) {

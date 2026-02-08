@@ -318,7 +318,10 @@ const should_enable_music_tool = (text: string): boolean => {
     normalized.includes("volume") ||
     normalized.includes("turn it") ||
     normalized.includes("louder") ||
-    normalized.includes("quieter")
+    normalized.includes("quieter") ||
+    normalized.includes("favorite song") ||
+    normalized.includes("favourite song") ||
+    normalized.includes("fav song")
   );
 };
 

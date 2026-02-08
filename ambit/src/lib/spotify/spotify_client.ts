@@ -9,8 +9,15 @@
  * The refresh token is used to obtain short-lived access tokens automatically.
  */
 
+export class NoActiveDeviceError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "NoActiveDeviceError";
+  }
+}
+
 const is_record = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null;
+ typeof value === "object" && value !== null;
 
 let cached_access_token: string | null = null;
 let token_expires_at = 0;
@@ -96,6 +103,14 @@ const spotify_api = async ({
 
   if (!response.ok) {
     const error_text = await response.text().catch(() => "");
+
+    // Detect "no active device" errors (Spotify returns 404 for player endpoints)
+    if (response.status === 404 && path.startsWith("/me/player")) {
+      throw new NoActiveDeviceError(
+        "No active Spotify device found. Open Spotify on a device first, then select it in Settings."
+      );
+    }
+
     throw new Error(`Spotify API error ${response.status}: ${error_text.slice(0, 200)}`);
   }
 
@@ -107,6 +122,173 @@ export type spotify_action_result = {
   ok: boolean;
   message: string;
   data?: Record<string, unknown>;
+};
+
+export type spotify_device = {
+  id: string;
+  name: string;
+  type: string;
+  is_active: boolean;
+  volume_percent: number | null;
+};
+
+/**
+ * List available Spotify Connect devices.
+ */
+export const spotify_get_devices = async (): Promise<spotify_device[]> => {
+  const data = await spotify_api({ path: "/me/player/devices" });
+  if (!data) return [];
+
+  const devices = Array.isArray(data["devices"]) ? data["devices"] : [];
+  return (devices as Record<string, unknown>[]).map((d) => ({
+    id: typeof d["id"] === "string" ? d["id"] : "",
+    name: typeof d["name"] === "string" ? d["name"] : "Unknown",
+    type: typeof d["type"] === "string" ? d["type"] : "Unknown",
+    is_active: d["is_active"] === true,
+    volume_percent: typeof d["volume_percent"] === "number" ? d["volume_percent"] : null,
+  }));
+};
+
+/**
+ * Transfer playback to a specific device.
+ */
+export const spotify_transfer_playback = async ({
+  device_id,
+  should_play = false,
+}: {
+  device_id: string;
+  should_play?: boolean;
+}): Promise<spotify_action_result> => {
+  if (!device_id) return { ok: false, message: "No device ID provided." };
+
+  await spotify_api({
+    path: "/me/player",
+    method: "PUT",
+    body: { device_ids: [device_id], play: should_play },
+  });
+
+  return { ok: true, message: "Playback transferred." };
+};
+
+/* ------------------------------------------------------------------ */
+/*  Preferred device — user selects their device in Settings           */
+/*  Persisted to disk so the choice survives server restarts.          */
+/* ------------------------------------------------------------------ */
+
+import { readFileSync, writeFileSync } from "fs";
+import { join } from "path";
+
+const PREF_FILE = join(process.cwd(), ".spotify_preferred_device");
+
+const load_preferred_device = (): string | null => {
+  try {
+    const raw = readFileSync(PREF_FILE, "utf-8").trim();
+    return raw || null;
+  } catch {
+    return null;
+  }
+};
+
+let preferred_device_id: string | null = load_preferred_device();
+
+/** Get the user's preferred device ID (set via Settings). */
+export const get_preferred_device = (): string | null => preferred_device_id;
+
+/** Set the user's preferred device ID. Pass null to clear. Persists to disk. */
+export const set_preferred_device = (device_id: string | null): void => {
+  preferred_device_id = device_id;
+  try {
+    writeFileSync(PREF_FILE, device_id ?? "", "utf-8");
+  } catch (err) {
+    console.warn("[Spotify] Failed to persist preferred device:", err);
+  }
+  console.log(`[Spotify] Preferred device set to: ${device_id ?? "(none)"}`);
+};
+
+/**
+ * Resolve which device to use for playback.
+ *
+ * Rules:
+ *   1. If the user picked a device in Settings → use that one.
+ *   2. If there is exactly 1 device available → use it automatically.
+ *   3. Otherwise → return null (user must pick a device in Settings).
+ */
+const resolve_target_device = (devices: spotify_device[]): spotify_device | null => {
+  if (devices.length === 0) return null;
+
+  // 1. User's explicit choice
+  if (preferred_device_id) {
+    const preferred = devices.find((d) => d.id === preferred_device_id);
+    if (preferred) return preferred;
+    // Preferred device not in the list (turned off?) — fall through
+    console.warn("[Spotify] Preferred device not found in available devices.");
+  }
+
+  // 2. Only one device — auto-select it
+  if (devices.length === 1) return devices[0]!;
+
+  // 3. Multiple devices, no preference — user must choose
+  return null;
+};
+
+/**
+ * Wait for a specific device to become active by polling the devices endpoint.
+ * Spotify's Transfer Playback is async — the device isn't ready instantly.
+ */
+const wait_for_device_active = async (
+  device_id: string,
+  max_ms = 4000,
+  poll_ms = 500
+): Promise<boolean> => {
+  const deadline = Date.now() + max_ms;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, poll_ms));
+    const devices = await spotify_get_devices();
+    const target = devices.find((d) => d.id === device_id);
+    if (target?.is_active) return true;
+  }
+  return false;
+};
+
+/**
+ * Ensure the target device is active and ready to accept commands.
+ *
+ * Per Spotify API docs:
+ *   - PUT /me/player/play's `device_id` param does NOT activate inactive devices.
+ *   - PUT /me/player (Transfer Playback) with `play: true` DOES activate a device.
+ *   - "The order of execution is not guaranteed when you use this API with other
+ *     Player API endpoints." — so we poll until the device is truly active.
+ *
+ * Device selection:
+ *   - Uses the user's preferred device (from Settings), or auto-picks if only 1 available.
+ *   - If multiple devices exist and no preference is set, returns null so the AI
+ *     can tell the user to pick one in Settings.
+ */
+const ensure_device_active = async (): Promise<string | null> => {
+  const devices = await spotify_get_devices();
+  const target = resolve_target_device(devices);
+  if (!target) {
+    if (devices.length > 1) {
+      throw new Error(
+        `Multiple Spotify devices found but none selected. Go to Settings → Spotify and pick your playback device.`
+      );
+    }
+    return null;
+  }
+
+  if (target.is_active) return target.id;
+
+  // Device is inactive — use Transfer Playback to wake it up.
+  console.log(`[Spotify] Activating device "${target.name}" (${target.type})...`);
+  await spotify_transfer_playback({ device_id: target.id, should_play: true });
+
+  // Poll until Spotify confirms the device is active
+  const is_ready = await wait_for_device_active(target.id);
+  if (!is_ready) {
+    console.warn(`[Spotify] Device "${target.name}" did not become active in time.`);
+  }
+
+  return target.id;
 };
 
 export const spotify_now_playing = async (): Promise<spotify_action_result> => {
@@ -137,6 +319,18 @@ export const spotify_play = async ({
 }: {
   query?: string;
 }): Promise<spotify_action_result> => {
+  // Ensure the best device (prefer Computer) is active before playing.
+  // Per Spotify docs, the play endpoint's device_id param does NOT activate
+  // inactive devices — so we must ensure it's active first via Transfer Playback.
+  const device_id = await ensure_device_active();
+  if (!device_id) {
+    return {
+      ok: false,
+      message:
+        "No Spotify devices found. Open the Spotify desktop app on this computer, then try again.",
+    };
+  }
+
   if (query) {
     // Search for a track and play it
     const search_data = await spotify_api({
@@ -161,11 +355,15 @@ export const spotify_play = async ({
       : "";
 
     if (track_uri) {
+      // Device is confirmed active — play the track.
+      // No device_id param needed; Spotify targets the active device by default.
       await spotify_api({
         path: "/me/player/play",
         method: "PUT",
         body: { uris: [track_uri] },
       });
+      // Duck volume immediately — TTS will speak the confirmation next
+      await spotify_duck();
       return {
         ok: true,
         message: `Playing "${track_name}" by ${artists || "unknown artist"}.`,
@@ -174,12 +372,15 @@ export const spotify_play = async ({
     }
   }
 
-  // Resume playback
+  // Resume playback — device is already active
   await spotify_api({ path: "/me/player/play", method: "PUT" });
+  // Duck volume immediately — TTS will speak the confirmation next
+  await spotify_duck();
   return { ok: true, message: "Resumed playback." };
 };
 
 export const spotify_pause = async (): Promise<spotify_action_result> => {
+  // Pause targets the active device automatically
   await spotify_api({ path: "/me/player/pause", method: "PUT" });
   return { ok: true, message: "Paused." };
 };
@@ -206,6 +407,39 @@ export const spotify_volume = async ({
   });
   return { ok: true, message: `Volume set to ${safe_vol}%.` };
 };
+
+/* ------------------------------------------------------------------ */
+/*  Volume ducking — lowers volume while Ambit is speaking via TTS     */
+/* ------------------------------------------------------------------ */
+
+const DUCK_VOLUME = 30;
+const FULL_VOLUME = 100;
+
+/**
+ * Quick, fire-and-forget volume set. Skips device lookup to be fast.
+ * Used by the client-side TTS hooks via /api/spotify/volume.
+ */
+export const spotify_set_volume_quick = async (
+  volume_percent: number
+): Promise<void> => {
+  const safe_vol = Math.max(0, Math.min(100, Math.round(volume_percent)));
+  try {
+    await spotify_api({
+      path: `/me/player/volume?volume_percent=${safe_vol}`,
+      method: "PUT",
+    });
+  } catch {
+    // Best-effort — don't break TTS flow if volume set fails
+  }
+};
+
+/** Duck music volume to 30% (called when TTS starts speaking). */
+export const spotify_duck = async (): Promise<void> =>
+  spotify_set_volume_quick(DUCK_VOLUME);
+
+/** Restore music volume to 100% (called when TTS finishes speaking). */
+export const spotify_restore = async (): Promise<void> =>
+  spotify_set_volume_quick(FULL_VOLUME);
 
 export const spotify_search = async ({
   query,
@@ -275,6 +509,14 @@ export const execute_spotify_action = async ({
         return { ok: false, message: `Unknown action: ${action}` };
     }
   } catch (error) {
+    if (error instanceof NoActiveDeviceError) {
+      console.warn(`[Spotify] ${action}: no active device`);
+      return {
+        ok: false,
+        message:
+          "No active Spotify device found. Open Spotify on your phone, computer, or web browser, then try again. You can also pick a device in Settings.",
+      };
+    }
     const msg = error instanceof Error ? error.message : "Spotify action failed.";
     console.error(`[Spotify] ${action} failed:`, error);
     return { ok: false, message: msg };

@@ -6,6 +6,7 @@ import { VoicePicker } from "@/components/ui/voice_picker";
 import { MicSelector } from "@/components/ui/mic_selector";
 import { VoiceQualitySelector } from "@/components/ui/voice_quality_selector";
 import { ThinkingSoundsToggle } from "@/components/ui/thinking_sounds_toggle";
+import { SpotifySettings } from "@/components/ui/spotify_settings";
 import type {
   identity_profile_summary,
   identity_memory,
@@ -229,6 +230,8 @@ export const SettingsPanel = ({
               enabled={thinking_sounds_enabled}
               on_change={on_thinking_sounds_change}
             />
+
+            <SpotifySettings />
 
             {/* Voice selection */}
             <div className="flex flex-col gap-2">

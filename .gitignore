@@ -33,3 +33,6 @@ data/
 *.db-shm
 *.db-wal
 
+# Spotify device preference (local to each machine)
+.spotify_preferred_device
+
