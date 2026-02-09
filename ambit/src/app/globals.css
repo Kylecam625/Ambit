@@ -114,6 +114,98 @@ body {
     0 4px 24px rgba(0, 0, 0, 0.6);
 }
 
+/* ════════════════════════════════════════
+   Retro Timer
+   ════════════════════════════════════════ */
+
+.retro-timer-digits {
+  font-family: "Geist Mono", "SF Mono", "Menlo", "Consolas", monospace;
+  font-weight: 800;
+  font-size: clamp(2.8rem, 10vw, 4.5rem);
+  line-height: 1;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+  color: #ff3131;
+  text-shadow:
+    0 0 8px rgba(255, 49, 49, 0.9),
+    0 0 20px rgba(255, 49, 49, 0.5),
+    0 0 40px rgba(255, 49, 49, 0.25),
+    0 0 80px rgba(255, 49, 49, 0.1);
+}
+
+.retro-timer-done {
+  animation: retro-blink 1s step-end infinite;
+}
+
+.retro-digit {
+  transition: opacity 0.1s ease;
+}
+
+.retro-digit-done {
+  color: #00ff41;
+  text-shadow:
+    0 0 8px rgba(0, 255, 65, 0.9),
+    0 0 20px rgba(0, 255, 65, 0.5),
+    0 0 40px rgba(0, 255, 65, 0.25),
+    0 0 80px rgba(0, 255, 65, 0.1);
+}
+
+.retro-timer-label {
+  font-family: "Geist Mono", "SF Mono", "Menlo", "Consolas", monospace;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: rgba(255, 49, 49, 0.6);
+  text-shadow: 0 0 6px rgba(255, 49, 49, 0.3);
+}
+
+.retro-pill {
+  font-family: "Geist Mono", "SF Mono", "Menlo", "Consolas", monospace;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(255, 49, 49, 0.7);
+  border: 1px solid rgba(255, 49, 49, 0.3);
+  border-radius: 999px;
+  padding: 0.2rem 0.75rem;
+  background: rgba(255, 49, 49, 0.05);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.retro-pill:hover {
+  color: #ff3131;
+  border-color: rgba(255, 49, 49, 0.6);
+  background: rgba(255, 49, 49, 0.1);
+  text-shadow: 0 0 6px rgba(255, 49, 49, 0.4);
+}
+
+.retro-dismiss-btn {
+  font-family: "Geist Mono", "SF Mono", "Menlo", "Consolas", monospace;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: #00ff41;
+  border: 1px solid rgba(0, 255, 65, 0.4);
+  border-radius: 4px;
+  padding: 0.25rem 0.75rem;
+  background: rgba(0, 255, 65, 0.05);
+  cursor: pointer;
+  text-shadow: 0 0 6px rgba(0, 255, 65, 0.3);
+  transition: all 0.15s ease;
+}
+.retro-dismiss-btn:hover {
+  background: rgba(0, 255, 65, 0.15);
+  border-color: rgba(0, 255, 65, 0.7);
+  text-shadow: 0 0 10px rgba(0, 255, 65, 0.5);
+}
+
+@keyframes retro-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
 .response-panel {
   background: #08080e;
   border: 1.5px solid rgba(255, 255, 255, 0.08);

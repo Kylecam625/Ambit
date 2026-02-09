@@ -6,6 +6,7 @@ import type {
   identity_memory,
   identity_generated_image,
 } from "@/lib/identity/identity_types";
+import type { memory_cleanup_suggestion } from "@/lib/identity/memory_extractor";
 import { ProfileList } from "./profile_list";
 import { CreateProfileModal } from "./create_profile_modal";
 import { EditProfileModal } from "./edit_profile_modal";
@@ -29,6 +30,8 @@ export const ProfileManager = ({
   on_view_memory,
   on_view_generated_images,
   on_delete_memory_item,
+  on_clear_all_memory,
+  on_analyze_memory,
 }: {
   profiles: identity_profile_summary[];
   is_camera_running: boolean;
@@ -72,6 +75,8 @@ export const ProfileManager = ({
     kind: "tag" | "fact" | "preference" | "note";
     value: string;
   }) => Promise<identity_memory | null>;
+  on_clear_all_memory: (args: { profile_id: string }) => Promise<boolean>;
+  on_analyze_memory: (args: { profile_id: string }) => Promise<memory_cleanup_suggestion | null>;
 }) => {
   /* ---- Modal visibility state ---- */
   const [is_create_open, set_is_create_open] = useState(false);
@@ -243,6 +248,8 @@ export const ProfileManager = ({
           on_close={() => set_memory_target(null)}
           on_view_memory={on_view_memory}
           on_delete_memory_item={on_delete_memory_item}
+          on_clear_all_memory={on_clear_all_memory}
+          on_analyze_memory={on_analyze_memory}
         />
       )}
 

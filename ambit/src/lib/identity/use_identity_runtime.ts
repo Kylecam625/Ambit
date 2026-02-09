@@ -6,8 +6,10 @@ import type {
   identity_memory,
   identity_generated_image,
 } from "@/lib/identity/identity_types";
+import type { memory_cleanup_suggestion } from "@/lib/identity/memory_extractor";
 import {
   identity_add_enrollment,
+  identity_clear_memory,
   identity_create_profile,
   identity_delete_profile,
   identity_get_profile,
@@ -101,6 +103,8 @@ export type identity_runtime = {
     kind: "tag" | "fact" | "preference" | "note";
     value: string;
   }) => Promise<identity_memory | null>;
+  clear_all_memory: (args: { profile_id: string }) => Promise<boolean>;
+  analyze_memory: (args: { profile_id: string }) => Promise<memory_cleanup_suggestion | null>;
 };
 
 export const useIdentityRuntime = ({
@@ -789,6 +793,42 @@ export const useIdentityRuntime = ({
     [service_url]
   );
 
+  const clear_all_memory = useCallback(
+    async ({ profile_id }: { profile_id: string }): Promise<boolean> => {
+      const base_url = service_url.trim();
+      try {
+        await identity_clear_memory({ base_url, profile_id });
+        return true;
+      } catch (error) {
+        console.warn("[Identity] Failed to clear memory:", error);
+        return false;
+      }
+    },
+    [service_url]
+  );
+
+  const analyze_memory = useCallback(
+    async ({ profile_id }: { profile_id: string }): Promise<memory_cleanup_suggestion | null> => {
+      try {
+        const response = await fetch("/api/identity/analyze-memory", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ profile_id }),
+        });
+        if (!response.ok) {
+          console.warn("[Identity] Analyze memory failed:", response.status);
+          return null;
+        }
+        const data = await response.json();
+        return data.suggestion ?? null;
+      } catch (error) {
+        console.warn("[Identity] Failed to analyze memory:", error);
+        return null;
+      }
+    },
+    []
+  );
+
   return {
     service_url,
     is_connected,
@@ -812,6 +852,8 @@ export const useIdentityRuntime = ({
     view_profile_memory,
     view_profile_generated_images,
     delete_profile_memory_item,
+    clear_all_memory,
+    analyze_memory,
   };
 };
 

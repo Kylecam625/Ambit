@@ -221,6 +221,23 @@ export const identity_patch_memory = async ({
   return data.memory;
 };
 
+export const identity_clear_memory = async ({
+  base_url,
+  profile_id,
+}: {
+  base_url: string;
+  profile_id: string;
+}): Promise<{ ok: boolean; memory: identity_memory }> => {
+  const url = api_url({
+    base_url,
+    path: `/api/profiles/${encodeURIComponent(profile_id)}/memory`,
+  });
+  return await fetch_json<{ ok: boolean; memory: identity_memory }>({
+    url,
+    method: "DELETE",
+  });
+};
+
 export const identity_add_conversation_summary = async ({
   base_url,
   profile_id,

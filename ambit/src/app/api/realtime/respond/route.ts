@@ -7,6 +7,7 @@ import { maybe_start_background_memory_ingest } from "@/lib/identity/background_
 import { get_identity_service_url } from "@/lib/identity/identity_service_url";
 import { get_image_task, get_last_succeeded_image_url, start_background_generate_photo_task, start_background_edit_photo_task } from "@/lib/openai/background_image_tasks";
 import { execute_spotify_action, is_spotify_configured } from "@/lib/spotify/spotify_client";
+import { execute_govee_action, is_govee_configured } from "@/lib/govee/govee_client";
 import { get_openai_client } from "@/lib/openai/openai_client";
 import { parse_respond_request } from "@/lib/openai/openai_schemas";
 import {
@@ -290,6 +291,42 @@ If the user asks whether you're still generating the image, answer truthfully ba
           continue;
         }
 
+        if (tool_name === "set_timer") {
+          const duration_seconds =
+            typeof pending.tool_request.arguments?.["duration_seconds"] === "number"
+              ? Number(pending.tool_request.arguments["duration_seconds"])
+              : 0;
+          const label =
+            typeof pending.tool_request.arguments?.["label"] === "string"
+              ? String(pending.tool_request.arguments["label"]).trim()
+              : "";
+
+          const timer_id = crypto.randomUUID();
+
+          ui_events.push({
+            type: "timer_started",
+            timer_id,
+            duration_seconds,
+            label,
+          });
+
+          pending = await continue_openai_response_with_tool_output({
+            openai,
+            previous_response_id: pending.response_id,
+            conversation_id: null,
+            call_id: pending.tool_request.call_id,
+            tool_output: {
+              ok: true,
+              timer_set: true,
+              duration_seconds,
+              label: label || undefined,
+              note: "The timer is now displayed on screen and counting down. Continue the conversation naturally.",
+            },
+            extra_instructions,
+          });
+          continue;
+        }
+
         if (tool_name === "control_music") {
           const action =
             typeof pending.tool_request.arguments?.["action"] === "string"
@@ -331,6 +368,62 @@ If the user asks whether you're still generating the image, answer truthfully ba
             conversation_id: null,
             call_id: pending.tool_request.call_id,
             tool_output: spotify_result,
+            extra_instructions,
+          });
+          continue;
+        }
+
+        if (tool_name === "control_lights") {
+          const action =
+            typeof pending.tool_request.arguments?.["action"] === "string"
+              ? String(pending.tool_request.arguments["action"]).trim()
+              : "";
+          const color =
+            typeof pending.tool_request.arguments?.["color"] === "string"
+              ? String(pending.tool_request.arguments["color"]).trim()
+              : undefined;
+          const brightness =
+            typeof pending.tool_request.arguments?.["brightness"] === "number"
+              ? Number(pending.tool_request.arguments["brightness"])
+              : undefined;
+          const color_temperature =
+            typeof pending.tool_request.arguments?.["color_temperature"] === "number"
+              ? Number(pending.tool_request.arguments["color_temperature"])
+              : undefined;
+          const device_name =
+            typeof pending.tool_request.arguments?.["device_name"] === "string"
+              ? String(pending.tool_request.arguments["device_name"]).trim()
+              : undefined;
+
+          if (!is_govee_configured()) {
+            pending = await continue_openai_response_with_tool_output({
+              openai,
+              previous_response_id: pending.response_id,
+              conversation_id: null,
+              call_id: pending.tool_request.call_id,
+              tool_output: {
+                ok: false,
+                error: "Light control is not configured yet. A Govee API key is needed.",
+              },
+              extra_instructions,
+            });
+            continue;
+          }
+
+          const govee_result = await execute_govee_action({
+            action,
+            color,
+            brightness,
+            color_temperature,
+            device_name,
+          });
+
+          pending = await continue_openai_response_with_tool_output({
+            openai,
+            previous_response_id: pending.response_id,
+            conversation_id: null,
+            call_id: pending.tool_request.call_id,
+            tool_output: govee_result,
             extra_instructions,
           });
           continue;

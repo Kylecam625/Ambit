@@ -12,6 +12,7 @@ import type {
   identity_memory,
   identity_generated_image,
 } from "@/lib/identity/identity_types";
+import type { memory_cleanup_suggestion } from "@/lib/identity/memory_extractor";
 
 type SettingsPanelProps = {
   is_loading_mics: boolean;
@@ -81,6 +82,8 @@ type SettingsPanelProps = {
     kind: "tag" | "fact" | "preference" | "note";
     value: string;
   }) => Promise<identity_memory | null>;
+  on_identity_clear_all_memory: (args: { profile_id: string }) => Promise<boolean>;
+  on_identity_analyze_memory: (args: { profile_id: string }) => Promise<memory_cleanup_suggestion | null>;
 };
 
 export const SettingsPanel = ({
@@ -116,6 +119,8 @@ export const SettingsPanel = ({
   on_identity_view_memory,
   on_identity_view_generated_images,
   on_identity_delete_memory_item,
+  on_identity_clear_all_memory,
+  on_identity_analyze_memory,
 }: SettingsPanelProps) => {
   const [is_open, set_is_open] = useState(false);
   const [is_voice_picker_open, set_is_voice_picker_open] = useState(false);
@@ -330,6 +335,8 @@ export const SettingsPanel = ({
                 on_view_memory={on_identity_view_memory}
                 on_view_generated_images={on_identity_view_generated_images}
                 on_delete_memory_item={on_identity_delete_memory_item}
+                on_clear_all_memory={on_identity_clear_all_memory}
+                on_analyze_memory={on_identity_analyze_memory}
               />
             </div>
           </div>

@@ -7,6 +7,7 @@ import type {
   identity_memory,
   identity_profile_summary,
 } from "@/lib/identity/identity_types";
+import type { memory_cleanup_suggestion } from "@/lib/identity/memory_extractor";
 import type { ReactNode } from "react";
 
 type tone = "neutral" | "ok" | "warn" | "bad";
@@ -99,6 +100,8 @@ export const MouthTopBar = ({
   on_identity_view_memory,
   on_identity_view_generated_images,
   on_identity_delete_memory_item,
+  on_identity_clear_all_memory,
+  on_identity_analyze_memory,
 
   state_label,
   state_tone,
@@ -162,6 +165,8 @@ export const MouthTopBar = ({
     kind: "tag" | "fact" | "preference" | "note";
     value: string;
   }) => Promise<identity_memory | null>;
+  on_identity_clear_all_memory: (args: { profile_id: string }) => Promise<boolean>;
+  on_identity_analyze_memory: (args: { profile_id: string }) => Promise<memory_cleanup_suggestion | null>;
 
   // Status
   state_label: string;
@@ -279,6 +284,8 @@ export const MouthTopBar = ({
           on_identity_view_memory={on_identity_view_memory}
           on_identity_view_generated_images={on_identity_view_generated_images}
           on_identity_delete_memory_item={on_identity_delete_memory_item}
+          on_identity_clear_all_memory={on_identity_clear_all_memory}
+          on_identity_analyze_memory={on_identity_analyze_memory}
         />
       </div>
     </div>

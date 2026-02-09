@@ -145,7 +145,9 @@ const extract_first_tool_call = (response: Record<string, unknown>): extracted_t
       name !== "generate_photo" &&
       name !== "edit_photo" &&
       name !== "set_ui_mood" &&
+      name !== "set_timer" &&
       name !== "control_music" &&
+      name !== "control_lights" &&
       name !== "analyze_screen"
     ) {
       console.warn(`[openai_responses] Ignoring unknown tool call: ${name}`);

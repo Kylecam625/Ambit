@@ -249,6 +249,10 @@ const create_repo = ({ db }) => {
   `
   );
 
+  const delete_summaries_for_profile = db.prepare(
+    `DELETE FROM conversation_summaries WHERE profile_id = ?`
+  );
+
   const insert_generated_image = db.prepare(
     `
     INSERT INTO generated_images (image_id, profile_id, prompt, image_data_url, created_at)
@@ -488,6 +492,31 @@ const create_repo = ({ db }) => {
       touch_profile.run({ profile_id, updated_at });
 
       return next;
+    },
+
+    clear_memory({ profile_id }) {
+      const normalized_profile_id = to_string(profile_id).trim();
+      if (!normalized_profile_id) throw new Error("profile_id is required");
+
+      return tx(() => {
+        const profile = get_profile.get(normalized_profile_id);
+        if (!profile) throw new Error("Profile not found");
+
+        // Reset memory to empty
+        const updated_at = now_iso();
+        upsert_memory.run({
+          profile_id: normalized_profile_id,
+          memory_json: JSON.stringify(DEFAULT_MEMORY),
+          updated_at,
+        });
+
+        // Delete all conversation summaries
+        delete_summaries_for_profile.run(normalized_profile_id);
+
+        touch_profile.run({ profile_id: normalized_profile_id, updated_at });
+
+        return { ok: true, memory: DEFAULT_MEMORY };
+      });
     },
 
     add_conversation_summary({ profile_id, conversation_id, summary, started_at, ended_at }) {

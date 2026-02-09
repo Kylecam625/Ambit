@@ -69,11 +69,13 @@ export const Orb = ({
   mood = "neutral",
   onClick,
   className = "",
+  children,
 }: {
   state: AgentState;
   mood?: UiMood;
   onClick?: () => void;
   className?: string;
+  children?: React.ReactNode;
 }) => {
   const s = get_style(state);
   const extra_glow = mood !== "neutral" ? mood_glow[mood] : "";
@@ -109,6 +111,11 @@ export const Orb = ({
           animation: get_animation(state, mood),
         }}
       />
+      {children && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          {children}
+        </div>
+      )}
     </div>
   );
 };

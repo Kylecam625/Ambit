@@ -189,6 +189,23 @@ const create_profiles_router = ({ repo }) => {
     }
   });
 
+  router.delete("/profiles/:profile_id/memory", (req, res) => {
+    try {
+      const profile_id = to_string(req.params.profile_id).trim();
+      if (!profile_id) {
+        res.status(400).json({ error: "profile_id is required" });
+        return;
+      }
+
+      const result = repo.clear_memory({ profile_id });
+      res.json(result);
+    } catch (error) {
+      const message = as_error_message(error);
+      const status = message.toLowerCase().includes("not found") ? 404 : 400;
+      res.status(status).json({ error: message });
+    }
+  });
+
   router.post("/profiles/:profile_id/conversations", (req, res) => {
     try {
       const profile_id = to_string(req.params.profile_id).trim();

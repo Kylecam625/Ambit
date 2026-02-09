@@ -3,7 +3,9 @@ export type ambit_tool_name =
   | "generate_photo"
   | "edit_photo"
   | "set_ui_mood"
+  | "set_timer"
   | "control_music"
+  | "control_lights"
   | "analyze_screen";
 
 export type analyze_camera_frame_args = {
@@ -31,6 +33,19 @@ export type control_music_args = {
   action: "play" | "pause" | "skip" | "previous" | "search" | "now_playing" | "volume";
   query?: string;
   volume_percent?: number;
+};
+
+export type control_lights_args = {
+  action: "turn_on" | "turn_off" | "brightness" | "color" | "color_temperature" | "status" | "list_devices";
+  color?: string;
+  brightness?: number;
+  color_temperature?: number;
+  device_name?: string;
+};
+
+export type set_timer_args = {
+  duration_seconds: number;
+  label?: string;
 };
 
 export type analyze_screen_args = {
@@ -153,6 +168,32 @@ const SET_UI_MOOD_TOOL = {
   },
 };
 
+const SET_TIMER_TOOL = {
+  type: "function" as const,
+  name: "set_timer",
+  strict: false,
+  description:
+    "Set a countdown timer. Use when the user asks to set a timer, alarm, countdown, or reminder " +
+    "for a specific duration. Examples: 'set a timer for 5 minutes', 'remind me in 30 seconds', " +
+    "'start a 10-minute countdown', 'timer for 1 hour', 'set an alarm for 45 minutes'. " +
+    "Convert the user's duration to seconds. Optionally include a label like 'pizza timer'.",
+  parameters: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      duration_seconds: {
+        type: "number",
+        description: "The timer duration in seconds. Convert from the user's request (e.g. 5 minutes = 300).",
+      },
+      label: {
+        type: "string",
+        description: "Optional short label for the timer (e.g. 'Pizza', 'Laundry', 'Break').",
+      },
+    },
+    required: ["duration_seconds"],
+  },
+};
+
 const CONTROL_MUSIC_TOOL = {
   type: "function" as const,
   name: "control_music",
@@ -177,6 +218,70 @@ const CONTROL_MUSIC_TOOL = {
       volume_percent: {
         type: "number",
         description: "Volume level 0-100 for 'volume' action.",
+      },
+    },
+    required: ["action"],
+  },
+};
+
+const CONTROL_LIGHTS_TOOL = {
+  type: "function" as const,
+  name: "control_lights",
+  strict: false,
+  description:
+    "REQUIRED: Call this tool for ANY light-related request. This is your ONLY way to control lights. " +
+    "Do NOT say 'I can't control lights' or claim lights are already changed — CALL THIS TOOL. " +
+    "A single call controls ALL matching lights at once (no settings needed). " +
+    "Use for: turn on/off, change color, adjust brightness, set color temperature, check status. " +
+    "Examples: 'turn the lights blue', 'dim the dining room lights to 30%', 'turn off the lights', " +
+    "'set the bedroom lights to warm white', 'make it brighter', 'what color are my lights?'.",
+  parameters: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      action: {
+        type: "string",
+        enum: [
+          "turn_on",
+          "turn_off",
+          "brightness",
+          "color",
+          "color_temperature",
+          "status",
+          "list_devices",
+        ],
+        description:
+          "The light action to perform. " +
+          "turn_on/turn_off: power on or off. " +
+          "brightness: set brightness 0-100. " +
+          "color: set a color by name (red, blue, warm white, etc.), hex (#ff0000), or r,g,b. " +
+          "color_temperature: set white temperature in Kelvin (2000-9000, lower=warmer). " +
+          "status: check current light state. " +
+          "list_devices: list all available lights.",
+      },
+      color: {
+        type: "string",
+        description:
+          "Color for the 'color' action. Accepts names (red, blue, purple, warm white, sky blue, etc.), " +
+          "hex codes (#ff5500), or RGB (255,100,0).",
+      },
+      brightness: {
+        type: "number",
+        description: "Brightness percentage 0-100 for the 'brightness' action.",
+      },
+      color_temperature: {
+        type: "number",
+        description:
+          "Color temperature in Kelvin for the 'color_temperature' action. " +
+          "2000K = very warm/candlelight, 4000K = neutral, 6500K = daylight, 9000K = cool blue.",
+      },
+      device_name: {
+        type: "string",
+        description:
+          "Target lights by room or name. ALL lights matching this name are controlled at once " +
+          "(e.g. 'dining room' controls all 3 dining room lights). " +
+          "Use 'all' to target every light. If omitted, ALL lights are targeted by default. " +
+          "Pass a specific name only when the user names a particular room or light.",
       },
     },
     required: ["action"],
@@ -214,7 +319,9 @@ export const enabled_ambit_function_tools = [
   GENERATE_PHOTO_TOOL,
   EDIT_PHOTO_TOOL,
   SET_UI_MOOD_TOOL,
+  SET_TIMER_TOOL,
   CONTROL_MUSIC_TOOL,
+  CONTROL_LIGHTS_TOOL,
   ANALYZE_SCREEN_TOOL,
 ];
 export const all_ambit_function_tools = [
@@ -222,7 +329,9 @@ export const all_ambit_function_tools = [
   GENERATE_PHOTO_TOOL,
   EDIT_PHOTO_TOOL,
   SET_UI_MOOD_TOOL,
+  SET_TIMER_TOOL,
   CONTROL_MUSIC_TOOL,
+  CONTROL_LIGHTS_TOOL,
   ANALYZE_SCREEN_TOOL,
 ];
 
@@ -233,7 +342,9 @@ const tool_by_name: Record<ambit_tool_name, Record<string, unknown>> = {
   generate_photo: GENERATE_PHOTO_TOOL,
   edit_photo: EDIT_PHOTO_TOOL,
   set_ui_mood: SET_UI_MOOD_TOOL,
+  set_timer: SET_TIMER_TOOL,
   control_music: CONTROL_MUSIC_TOOL,
+  control_lights: CONTROL_LIGHTS_TOOL,
   analyze_screen: ANALYZE_SCREEN_TOOL,
 };
 
@@ -344,10 +455,53 @@ const should_enable_screen_tool = (text: string): boolean => {
   );
 };
 
+const should_enable_timer_tool = (text: string): boolean => {
+  const normalized = text.toLowerCase();
+  return (
+    normalized.includes("timer") ||
+    normalized.includes("alarm") ||
+    normalized.includes("countdown") ||
+    normalized.includes("remind me in") ||
+    normalized.includes("set a timer") ||
+    normalized.includes("wake me") ||
+    (normalized.includes("minute") && (normalized.includes("set") || normalized.includes("start"))) ||
+    (normalized.includes("second") && (normalized.includes("set") || normalized.includes("start")))
+  );
+};
+
+const should_enable_lights_tool = (text: string): boolean => {
+  const normalized = text.toLowerCase();
+  return (
+    normalized.includes("light") ||
+    normalized.includes("lights") ||
+    normalized.includes("lamp") ||
+    normalized.includes("govee") ||
+    normalized.includes("bright") ||
+    normalized.includes("dim") ||
+    normalized.includes("dimmer") ||
+    normalized.includes("glow") ||
+    normalized.includes("led") ||
+    normalized.includes("leds") ||
+    normalized.includes("turn on the") ||
+    normalized.includes("turn off the") ||
+    normalized.includes("color temperature") ||
+    normalized.includes("warm white") ||
+    normalized.includes("cool white") ||
+    normalized.includes("nightlight") ||
+    normalized.includes("mood lighting")
+  );
+};
+
 /** Whether Spotify env vars are configured (used to conditionally enable the music tool). */
 const is_spotify_configured = (): boolean => {
   if (typeof process === "undefined") return false;
   return Boolean(process.env.SPOTIFY_CLIENT_ID && process.env.SPOTIFY_CLIENT_SECRET);
+};
+
+/** Whether Govee API key is configured (used to conditionally enable the lights tool). */
+const is_govee_configured_env = (): boolean => {
+  if (typeof process === "undefined") return false;
+  return Boolean(process.env.GOVEE_API_KEY);
 };
 
 export const select_ambit_tools = ({
@@ -390,6 +544,14 @@ export const select_ambit_tools = ({
 
   if (should_enable_music_tool(text) && is_spotify_configured()) {
     tools.push(CONTROL_MUSIC_TOOL);
+  }
+
+  if (should_enable_lights_tool(text) && is_govee_configured_env()) {
+    tools.push(CONTROL_LIGHTS_TOOL);
+  }
+
+  if (should_enable_timer_tool(text)) {
+    tools.push(SET_TIMER_TOOL);
   }
 
   if (should_enable_screen_tool(text)) {

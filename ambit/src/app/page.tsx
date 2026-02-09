@@ -17,7 +17,9 @@ import { ImageTaskToast } from "@/components/ui/image_task_toast";
 import { MatrixRain } from "@/components/ui/matrix_rain";
 import { useVoiceQuality } from "@/hooks/use_voice_quality";
 import { useThinkingSound } from "@/hooks/use_thinking_sound";
+import { use_timers } from "@/hooks/use_timers";
 import { WordHighlightedText } from "@/components/ui/word_highlighted_text";
+import { TimerDisplay } from "@/components/ui/timer_display";
 
 // ── Mood extraction from UI events ──
 const extract_latest_mood = (ui_events: Array<{ type: string; [key: string]: unknown }>): UiMood | null => {
@@ -256,6 +258,15 @@ export default function Home() {
     thinking_sounds_enabled
   );
 
+  // Timer state from ui_events
+  const {
+    timers,
+    active_timer_index,
+    cycle_active_timer,
+    dismiss_timer,
+    has_timers,
+  } = use_timers({ ui_events });
+
   // Track mood changes from UI events
   useEffect(() => {
     const mood = extract_latest_mood(ui_events);
@@ -360,6 +371,12 @@ export default function Home() {
           on_identity_delete_memory_item={
             identity.delete_profile_memory_item
           }
+          on_identity_clear_all_memory={
+            identity.clear_all_memory
+          }
+          on_identity_analyze_memory={
+            identity.analyze_memory
+          }
           state_label={state}
           state_tone={
             state === "speaking"
@@ -391,7 +408,16 @@ export default function Home() {
                 onClick={start_realtime}
                 aria-label="Start listening"
               >
-                <Orb state={state} mood={ui_mood} />
+                <Orb state={state} mood={ui_mood}>
+                  {has_timers && (
+                    <TimerDisplay
+                      timers={timers}
+                      active_index={active_timer_index}
+                      on_cycle={cycle_active_timer}
+                      on_dismiss={dismiss_timer}
+                    />
+                  )}
+                </Orb>
                 <span className="text-base font-bold tracking-wide text-amber-200/90 transition-colors hover:text-amber-100 animate-fade-in-up delay-300">
                   Tap to start
                 </span>
@@ -401,7 +427,16 @@ export default function Home() {
                 state={state}
                 mood={ui_mood}
                 onClick={stop_realtime}
-              />
+              >
+                {has_timers && (
+                  <TimerDisplay
+                    timers={timers}
+                    active_index={active_timer_index}
+                    on_cycle={cycle_active_timer}
+                    on_dismiss={dismiss_timer}
+                  />
+                )}
+              </Orb>
             )}
 
             {/* Bar visualizer directly below orb — same width as container */}
