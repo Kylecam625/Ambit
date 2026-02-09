@@ -83,10 +83,15 @@ export const edit_photo = async ({
   }
 
   // Extract base64 from data URL for the source image
-  const base64_match = source_image_data_url.match(/^data:image\/[^;]+;base64,(.+)$/);
+  const base64_match = source_image_data_url.match(/^data:(image\/[^;]+);base64,(.+)$/);
   if (!base64_match) {
     throw new Error("Invalid source image data URL format.");
   }
+
+  const mime_type = base64_match[1];
+  const extension = mime_type === "image/png" ? "png" : mime_type === "image/webp" ? "webp" : "jpg";
+  const buffer = Buffer.from(base64_match[2], "base64");
+  const image_file = new File([buffer], `source.${extension}`, { type: mime_type });
 
   const start = Date.now();
   const response = (await (edit_fn as (...args: unknown[]) => Promise<unknown>).call(
@@ -94,7 +99,7 @@ export const edit_photo = async ({
     {
       model: resolve_model("OPENAI_IMAGE_MODEL", DEFAULT_IMAGE_MODEL),
       prompt: trimmed_prompt,
-      image: Buffer.from(base64_match[1], "base64"),
+      image: image_file,
       size: safe_size,
       quality: safe_quality,
       output_format,

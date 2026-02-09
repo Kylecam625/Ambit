@@ -6,7 +6,8 @@ export type ambit_tool_name =
   | "set_timer"
   | "control_music"
   | "control_lights"
-  | "analyze_screen";
+  | "analyze_screen"
+  | "end_session";
 
 export type analyze_camera_frame_args = {
   question: string;
@@ -288,6 +289,25 @@ const CONTROL_LIGHTS_TOOL = {
   },
 };
 
+const END_SESSION_TOOL = {
+  type: "function" as const,
+  name: "end_session",
+  strict: false,
+  description:
+    "End the current voice conversation session. Call this when the user says goodbye, " +
+    "is done talking, wants to leave, or indicates they're finished in any way. " +
+    "Examples: 'goodbye', 'bye', 'see you later', 'I'm done', 'that's all', " +
+    "'good night', 'talk to you later', 'peace out', 'later ambit', 'I'm leaving'. " +
+    "IMPORTANT: When you call this tool, still provide a warm goodbye response — " +
+    "the session will end automatically after your response is spoken.",
+  parameters: {
+    type: "object",
+    additionalProperties: false,
+    properties: {},
+    required: [],
+  },
+};
+
 const ANALYZE_SCREEN_TOOL = {
   type: "function" as const,
   name: "analyze_screen",
@@ -323,6 +343,7 @@ export const enabled_ambit_function_tools = [
   CONTROL_MUSIC_TOOL,
   CONTROL_LIGHTS_TOOL,
   ANALYZE_SCREEN_TOOL,
+  END_SESSION_TOOL,
 ];
 export const all_ambit_function_tools = [
   ANALYZE_CAMERA_FRAME_TOOL,
@@ -333,6 +354,7 @@ export const all_ambit_function_tools = [
   CONTROL_MUSIC_TOOL,
   CONTROL_LIGHTS_TOOL,
   ANALYZE_SCREEN_TOOL,
+  END_SESSION_TOOL,
 ];
 
 export const ambit_tools = enabled_ambit_function_tools;
@@ -346,6 +368,7 @@ const tool_by_name: Record<ambit_tool_name, Record<string, unknown>> = {
   control_music: CONTROL_MUSIC_TOOL,
   control_lights: CONTROL_LIGHTS_TOOL,
   analyze_screen: ANALYZE_SCREEN_TOOL,
+  end_session: END_SESSION_TOOL,
 };
 
 const should_enable_camera_tool = (text: string): boolean => {
@@ -469,6 +492,33 @@ const should_enable_timer_tool = (text: string): boolean => {
   );
 };
 
+const should_enable_end_session_tool = (text: string): boolean => {
+  const normalized = text.toLowerCase();
+  return (
+    normalized.includes("goodbye") ||
+    normalized.includes("good bye") ||
+    normalized.includes("bye") ||
+    normalized.includes("see you") ||
+    normalized.includes("i'm done") ||
+    normalized.includes("im done") ||
+    normalized.includes("that's all") ||
+    normalized.includes("thats all") ||
+    normalized.includes("good night") ||
+    normalized.includes("goodnight") ||
+    normalized.includes("talk to you later") ||
+    normalized.includes("catch you later") ||
+    normalized.includes("peace out") ||
+    normalized.includes("later ambit") ||
+    normalized.includes("bye ambit") ||
+    normalized.includes("i'm leaving") ||
+    normalized.includes("im leaving") ||
+    normalized.includes("i'm out") ||
+    normalized.includes("im out") ||
+    normalized.includes("gotta go") ||
+    normalized.includes("see ya")
+  );
+};
+
 const should_enable_lights_tool = (text: string): boolean => {
   const normalized = text.toLowerCase();
   return (
@@ -556,6 +606,10 @@ export const select_ambit_tools = ({
 
   if (should_enable_screen_tool(text)) {
     tools.push(ANALYZE_SCREEN_TOOL);
+  }
+
+  if (should_enable_end_session_tool(text)) {
+    tools.push(END_SESSION_TOOL);
   }
 
   return tools;

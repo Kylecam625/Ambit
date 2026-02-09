@@ -7,6 +7,8 @@ import type {
   identity_generated_image,
   identity_journal_entry,
   identity_journal_entry_summary,
+  journal_movie,
+  journal_movie_summary,
 } from "./identity_types";
 
 const normalize_base_url = (raw: string): string => raw.trim().replace(/\/+$/, "");
@@ -424,5 +426,190 @@ export const identity_delete_journal_entry = async ({
     path: `/api/profiles/${encodeURIComponent(profile_id)}/journal/${encodeURIComponent(entry_date)}`,
   });
   return await fetch_json<{ ok: boolean }>({ url, method: "DELETE" });
+};
+
+// ── Journal movie endpoints ──
+
+export const identity_create_journal_movie = async ({
+  base_url,
+  profile_id,
+  entry_date,
+  voice_id,
+  voice_name,
+}: {
+  base_url: string;
+  profile_id: string;
+  entry_date: string;
+  voice_id: string;
+  voice_name: string | null;
+}): Promise<journal_movie_summary> => {
+  const url = api_url({
+    base_url,
+    path: `/api/profiles/${encodeURIComponent(profile_id)}/journal/${encodeURIComponent(entry_date)}/movies`,
+  });
+  const data = await fetch_json<{ movie: journal_movie_summary }>({
+    url,
+    method: "POST",
+    body: { voice_id, voice_name },
+  });
+  return data.movie;
+};
+
+export const identity_complete_journal_movie = async ({
+  base_url,
+  profile_id,
+  movie_id,
+  segments_json,
+  audio_base64,
+  alignment_json,
+}: {
+  base_url: string;
+  profile_id: string;
+  movie_id: string;
+  segments_json: string;
+  audio_base64: string;
+  alignment_json: string;
+}): Promise<{ movie_id: string; status: string }> => {
+  const url = api_url({
+    base_url,
+    path: `/api/profiles/${encodeURIComponent(profile_id)}/journal/movies/${encodeURIComponent(movie_id)}/complete`,
+  });
+  return await fetch_json<{ movie_id: string; status: string }>({
+    url,
+    method: "PATCH",
+    body: { segments_json, audio_base64, alignment_json },
+  });
+};
+
+export const identity_fail_journal_movie = async ({
+  base_url,
+  profile_id,
+  movie_id,
+}: {
+  base_url: string;
+  profile_id: string;
+  movie_id: string;
+}): Promise<{ movie_id: string; status: string }> => {
+  const url = api_url({
+    base_url,
+    path: `/api/profiles/${encodeURIComponent(profile_id)}/journal/movies/${encodeURIComponent(movie_id)}/fail`,
+  });
+  return await fetch_json<{ movie_id: string; status: string }>({
+    url,
+    method: "PATCH",
+  });
+};
+
+export const identity_list_journal_movies = async ({
+  base_url,
+  profile_id,
+  entry_date,
+}: {
+  base_url: string;
+  profile_id: string;
+  entry_date: string;
+}): Promise<journal_movie_summary[]> => {
+  const url = api_url({
+    base_url,
+    path: `/api/profiles/${encodeURIComponent(profile_id)}/journal/${encodeURIComponent(entry_date)}/movies`,
+  });
+  const data = await fetch_json<{ movies: journal_movie_summary[] }>({ url });
+  return Array.isArray(data.movies) ? data.movies : [];
+};
+
+export const identity_get_latest_journal_movie = async ({
+  base_url,
+  profile_id,
+  entry_date,
+}: {
+  base_url: string;
+  profile_id: string;
+  entry_date: string;
+}): Promise<journal_movie | null> => {
+  const url = api_url({
+    base_url,
+    path: `/api/profiles/${encodeURIComponent(profile_id)}/journal/${encodeURIComponent(entry_date)}/movies/latest`,
+  });
+  try {
+    const data = await fetch_json<{ movie: journal_movie }>({ url });
+    return data.movie ?? null;
+  } catch {
+    return null;
+  }
+};
+
+export const identity_get_journal_movie = async ({
+  base_url,
+  profile_id,
+  movie_id,
+}: {
+  base_url: string;
+  profile_id: string;
+  movie_id: string;
+}): Promise<journal_movie | null> => {
+  const url = api_url({
+    base_url,
+    path: `/api/profiles/${encodeURIComponent(profile_id)}/journal/movies/${encodeURIComponent(movie_id)}`,
+  });
+  try {
+    const data = await fetch_json<{ movie: journal_movie }>({ url });
+    return data.movie ?? null;
+  } catch {
+    return null;
+  }
+};
+
+export const identity_delete_journal_movie = async ({
+  base_url,
+  profile_id,
+  movie_id,
+}: {
+  base_url: string;
+  profile_id: string;
+  movie_id: string;
+}): Promise<{ ok: boolean }> => {
+  const url = api_url({
+    base_url,
+    path: `/api/profiles/${encodeURIComponent(profile_id)}/journal/movies/${encodeURIComponent(movie_id)}`,
+  });
+  return await fetch_json<{ ok: boolean }>({ url, method: "DELETE" });
+};
+
+export const identity_list_movie_dates = async ({
+  base_url,
+  profile_id,
+  year,
+  month,
+}: {
+  base_url: string;
+  profile_id: string;
+  year: number;
+  month: number;
+}): Promise<string[]> => {
+  const url = api_url({
+    base_url,
+    path: `/api/profiles/${encodeURIComponent(profile_id)}/journal-movie-dates?year=${year}&month=${month}`,
+  });
+  const data = await fetch_json<{ dates: string[] }>({ url });
+  return Array.isArray(data.dates) ? data.dates : [];
+};
+
+export const identity_get_enrollment_image = async ({
+  base_url,
+  profile_id,
+}: {
+  base_url: string;
+  profile_id: string;
+}): Promise<string | null> => {
+  const url = api_url({
+    base_url,
+    path: `/api/profiles/${encodeURIComponent(profile_id)}/enrollment-image`,
+  });
+  try {
+    const data = await fetch_json<{ image_data_url: string }>({ url });
+    return data.image_data_url ?? null;
+  } catch {
+    return null;
+  }
 };
 

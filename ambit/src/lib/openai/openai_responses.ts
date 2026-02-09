@@ -26,6 +26,14 @@ const normalize_string = (value: unknown): string | null => {
 
 const trim_message_content = (value: string): string => value.trim().slice(0, MAX_CONVERSATION_MESSAGE_CHARS);
 
+/**
+ * Strip wake-word phrases ("Hey Ambit", "Ambit,") from the start of user
+ * messages so the model never sees the AI's own name in user speech and
+ * mistakes it for the user's name.
+ */
+const strip_wake_phrase_from_content = (text: string): string =>
+  text.replace(/^\s*(hey\s+)?ambit[,.:!?\s]*/i, "").trim();
+
 export const trim_history_messages = (
   history: ConversationMessage[]
 ): ConversationMessage[] =>
@@ -33,8 +41,12 @@ export const trim_history_messages = (
     .slice(-MAX_CONVERSATION_MESSAGES)
     .map((message) => ({
       role: message.role,
-      content: trim_message_content(message.content),
-    }));
+      content:
+        message.role === "user"
+          ? trim_message_content(strip_wake_phrase_from_content(message.content))
+          : trim_message_content(message.content),
+    }))
+    .filter((message) => message.content.length > 0);
 
 export const build_instructions = ({
   extra_instructions,
@@ -148,7 +160,8 @@ const extract_first_tool_call = (response: Record<string, unknown>): extracted_t
       name !== "set_timer" &&
       name !== "control_music" &&
       name !== "control_lights" &&
-      name !== "analyze_screen"
+      name !== "analyze_screen" &&
+      name !== "end_session"
     ) {
       console.warn(`[openai_responses] Ignoring unknown tool call: ${name}`);
       continue;

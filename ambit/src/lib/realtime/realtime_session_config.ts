@@ -9,7 +9,9 @@ export const REALTIME_SEMANTIC_VAD = {
   type: "semantic_vad" as const,
   // "high" = detect speech start as soon as possible (best for barge-in).
   // "auto"/"medium" = balanced. "low" = wait longer for user pauses.
-  eagerness: "medium" as const,
+  // Using "low" so users can pause mid-sentence without the VAD
+  // prematurely ending their turn and triggering a partial response.
+  eagerness: "low" as const,
   // We only use Realtime for transcription + turn detection.
   // Ambit generates responses via /api/realtime/respond.
   create_response: false,
@@ -29,7 +31,7 @@ export const build_realtime_transcription_session = () => ({
       },
       transcription: {
         model: REALTIME_TRANSCRIPTION_MODEL,
-        prompt: "Your name is Ambit",
+        prompt: "The user is speaking to an AI assistant called Ambit. They may say 'Hey Ambit' to start.",
       },
       turn_detection: {
         ...REALTIME_SEMANTIC_VAD,

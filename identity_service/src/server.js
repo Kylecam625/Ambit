@@ -24,7 +24,7 @@ const create_app = () => {
     next();
   });
 
-  app.use(express.json({ limit: "4mb" }));
+  app.use(express.json({ limit: "20mb" }));
 
   const db = open_db({ db_path });
   ensure_schema(db);

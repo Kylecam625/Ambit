@@ -3,12 +3,13 @@ import { useCallback, useEffect, useRef } from "react";
 /* ------------------------------------------------------------------ */
 /*  Session inactivity timeout                                         */
 /*                                                                     */
-/*  The 6-second countdown only starts AFTER Ambit finishes speaking.  */
-/*  While Ambit is responding, generating TTS, or playing audio the    */
-/*  timer is paused. It resets on any user speech activity too.         */
+/*  The 10-second countdown only starts AFTER Ambit finishes speaking  */
+/*  AND the user has stopped speaking. While Ambit is responding,      */
+/*  generating TTS, playing audio, or the user is actively speaking    */
+/*  the timer is paused. It resets on any speech activity too.          */
 /* ------------------------------------------------------------------ */
 
-const INACTIVITY_TIMEOUT_MS = 6_000;
+const INACTIVITY_TIMEOUT_MS = 10_000;
 const CHECK_INTERVAL_MS = 1_000;
 
 export const use_session_timeout = ({

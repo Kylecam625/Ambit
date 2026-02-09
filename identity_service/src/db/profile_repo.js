@@ -310,6 +310,70 @@ const create_repo = ({ db }) => {
     `DELETE FROM journal_entries WHERE entry_id = ?`
   );
 
+  // ── Journal movie prepared statements ──
+
+  const insert_journal_movie = db.prepare(
+    `
+    INSERT INTO journal_movies (movie_id, profile_id, entry_date, version, voice_id, voice_name, segments_json, audio_base64, alignment_json, status, created_at)
+    VALUES (@movie_id, @profile_id, @entry_date, @version, @voice_id, @voice_name, @segments_json, @audio_base64, @alignment_json, @status, @created_at)
+  `
+  );
+
+  const get_max_movie_version = db.prepare(
+    `SELECT MAX(version) AS max_version FROM journal_movies WHERE profile_id = ? AND entry_date = ?`
+  );
+
+  const list_journal_movies_stmt = db.prepare(
+    `
+    SELECT movie_id, profile_id, entry_date, version, voice_id, voice_name, segments_json, audio_base64, alignment_json, status, created_at
+    FROM journal_movies
+    WHERE profile_id = ? AND entry_date = ?
+    ORDER BY version DESC
+  `
+  );
+
+  const get_journal_movie_stmt = db.prepare(
+    `
+    SELECT movie_id, profile_id, entry_date, version, voice_id, voice_name, segments_json, audio_base64, alignment_json, status, created_at
+    FROM journal_movies
+    WHERE movie_id = ?
+  `
+  );
+
+  const get_latest_journal_movie_stmt = db.prepare(
+    `
+    SELECT movie_id, profile_id, entry_date, version, voice_id, voice_name, segments_json, audio_base64, alignment_json, status, created_at
+    FROM journal_movies
+    WHERE profile_id = ? AND entry_date = ? AND status = 'complete'
+    ORDER BY version DESC
+    LIMIT 1
+  `
+  );
+
+  const delete_journal_movie_stmt = db.prepare(
+    `DELETE FROM journal_movies WHERE movie_id = ?`
+  );
+
+  const list_movie_dates_stmt = db.prepare(
+    `
+    SELECT DISTINCT entry_date
+    FROM journal_movies
+    WHERE profile_id = ? AND entry_date >= ? AND entry_date <= ? AND status = 'complete'
+    ORDER BY entry_date ASC
+  `
+  );
+
+  const update_journal_movie_status_stmt = db.prepare(
+    `
+    UPDATE journal_movies
+    SET status = @status,
+        segments_json = @segments_json,
+        audio_base64 = @audio_base64,
+        alignment_json = @alignment_json
+    WHERE movie_id = @movie_id
+  `
+  );
+
   const tx = db.transaction((fn) => fn());
 
   return {
@@ -692,6 +756,174 @@ const create_repo = ({ db }) => {
       if (!normalized_id) throw new Error("entry_id is required");
       delete_journal_entry_stmt.run(normalized_id);
       return { ok: true };
+    },
+
+    // ── Journal movie methods ──
+
+    create_journal_movie({ profile_id, entry_date, voice_id, voice_name }) {
+      const normalized_profile_id = to_string(profile_id).trim();
+      const normalized_date = to_string(entry_date).trim();
+      const normalized_voice_id = to_string(voice_id).trim();
+      if (!normalized_profile_id) throw new Error("profile_id is required");
+      if (!normalized_date || !/^\d{4}-\d{2}-\d{2}$/.test(normalized_date)) {
+        throw new Error("entry_date must be YYYY-MM-DD");
+      }
+      if (!normalized_voice_id) throw new Error("voice_id is required");
+
+      return tx(() => {
+        const profile = get_profile.get(normalized_profile_id);
+        if (!profile) throw new Error("Profile not found");
+
+        const max_row = get_max_movie_version.get(normalized_profile_id, normalized_date);
+        const next_version = (max_row?.max_version || 0) + 1;
+
+        const created_at = now_iso();
+        const record = {
+          movie_id: uuid(),
+          profile_id: normalized_profile_id,
+          entry_date: normalized_date,
+          version: next_version,
+          voice_id: normalized_voice_id,
+          voice_name: to_string(voice_name).trim() || null,
+          segments_json: "[]",
+          audio_base64: "",
+          alignment_json: "[]",
+          status: "generating",
+          created_at,
+        };
+
+        insert_journal_movie.run(record);
+        return record;
+      });
+    },
+
+    update_journal_movie_complete({ movie_id, segments_json, audio_base64, alignment_json }) {
+      const normalized_id = to_string(movie_id).trim();
+      if (!normalized_id) throw new Error("movie_id is required");
+
+      update_journal_movie_status_stmt.run({
+        movie_id: normalized_id,
+        status: "complete",
+        segments_json: typeof segments_json === "string" ? segments_json : JSON.stringify(segments_json),
+        audio_base64: to_string(audio_base64),
+        alignment_json: typeof alignment_json === "string" ? alignment_json : JSON.stringify(alignment_json),
+      });
+
+      return { movie_id: normalized_id, status: "complete" };
+    },
+
+    update_journal_movie_failed({ movie_id }) {
+      const normalized_id = to_string(movie_id).trim();
+      if (!normalized_id) throw new Error("movie_id is required");
+
+      update_journal_movie_status_stmt.run({
+        movie_id: normalized_id,
+        status: "failed",
+        segments_json: "[]",
+        audio_base64: "",
+        alignment_json: "[]",
+      });
+
+      return { movie_id: normalized_id, status: "failed" };
+    },
+
+    list_journal_movies({ profile_id, entry_date }) {
+      const normalized_profile_id = to_string(profile_id).trim();
+      const normalized_date = to_string(entry_date).trim();
+      if (!normalized_profile_id || !normalized_date) return [];
+
+      const rows = list_journal_movies_stmt.all(normalized_profile_id, normalized_date);
+      return rows.map((row) => ({
+        movie_id: to_string(row.movie_id).trim(),
+        profile_id: to_string(row.profile_id).trim(),
+        entry_date: to_string(row.entry_date).trim(),
+        version: Number(row.version) || 1,
+        voice_id: to_string(row.voice_id).trim(),
+        voice_name: to_string(row.voice_name).trim() || null,
+        status: to_string(row.status).trim(),
+        created_at: to_string(row.created_at).trim(),
+      }));
+    },
+
+    get_journal_movie({ movie_id }) {
+      const normalized_id = to_string(movie_id).trim();
+      if (!normalized_id) return null;
+
+      const row = get_journal_movie_stmt.get(normalized_id);
+      if (!row) return null;
+
+      return {
+        movie_id: to_string(row.movie_id).trim(),
+        profile_id: to_string(row.profile_id).trim(),
+        entry_date: to_string(row.entry_date).trim(),
+        version: Number(row.version) || 1,
+        voice_id: to_string(row.voice_id).trim(),
+        voice_name: to_string(row.voice_name).trim() || null,
+        segments_json: to_string(row.segments_json),
+        audio_base64: to_string(row.audio_base64),
+        alignment_json: to_string(row.alignment_json),
+        status: to_string(row.status).trim(),
+        created_at: to_string(row.created_at).trim(),
+      };
+    },
+
+    get_latest_journal_movie({ profile_id, entry_date }) {
+      const normalized_profile_id = to_string(profile_id).trim();
+      const normalized_date = to_string(entry_date).trim();
+      if (!normalized_profile_id || !normalized_date) return null;
+
+      const row = get_latest_journal_movie_stmt.get(normalized_profile_id, normalized_date);
+      if (!row) return null;
+
+      return {
+        movie_id: to_string(row.movie_id).trim(),
+        profile_id: to_string(row.profile_id).trim(),
+        entry_date: to_string(row.entry_date).trim(),
+        version: Number(row.version) || 1,
+        voice_id: to_string(row.voice_id).trim(),
+        voice_name: to_string(row.voice_name).trim() || null,
+        segments_json: to_string(row.segments_json),
+        audio_base64: to_string(row.audio_base64),
+        alignment_json: to_string(row.alignment_json),
+        status: to_string(row.status).trim(),
+        created_at: to_string(row.created_at).trim(),
+      };
+    },
+
+    delete_journal_movie({ movie_id }) {
+      const normalized_id = to_string(movie_id).trim();
+      if (!normalized_id) throw new Error("movie_id is required");
+      delete_journal_movie_stmt.run(normalized_id);
+      return { ok: true };
+    },
+
+    list_movie_dates({ profile_id, year, month }) {
+      const normalized_profile_id = to_string(profile_id).trim();
+      if (!normalized_profile_id) return [];
+
+      const y = to_int_or_null(year);
+      const m = to_int_or_null(month);
+      if (!y || !m || m < 1 || m > 12) return [];
+
+      const start_date = `${y}-${String(m).padStart(2, "0")}-01`;
+      const last_day = new Date(y, m, 0).getDate();
+      const end_date = `${y}-${String(m).padStart(2, "0")}-${String(last_day).padStart(2, "0")}`;
+
+      const rows = list_movie_dates_stmt.all(normalized_profile_id, start_date, end_date);
+      return rows.map((row) => to_string(row.entry_date).trim());
+    },
+
+    get_first_enrollment_image({ profile_id }) {
+      const normalized_profile_id = to_string(profile_id).trim();
+      if (!normalized_profile_id) return null;
+
+      const rows = list_enrollments.all(normalized_profile_id);
+      for (const row of rows) {
+        if (typeof row.image_data_url === "string" && row.image_data_url.startsWith("data:")) {
+          return row.image_data_url;
+        }
+      }
+      return null;
     },
   };
 };

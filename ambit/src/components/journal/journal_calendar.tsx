@@ -23,6 +23,7 @@ type JournalCalendarProps = {
   year: number;
   month: number;
   on_change_month: (year: number, month: number) => void;
+  movie_dates?: Set<string>;
 };
 
 const format_date = (y: number, m: number, d: number): string =>
@@ -45,6 +46,7 @@ export const JournalCalendar = ({
   year,
   month,
   on_change_month,
+  movie_dates,
 }: JournalCalendarProps) => {
   const today_str = useMemo(() => get_today_str(), []);
 
@@ -139,6 +141,7 @@ export const JournalCalendar = ({
           const is_selected = cell.date_str === selected_date;
           const entry = entry_map.get(cell.date_str);
           const has_entry = Boolean(entry);
+          const has_movie = movie_dates?.has(cell.date_str) ?? false;
           const mood_color = entry?.mood ? MOOD_COLORS[entry.mood] || MOOD_COLORS.neutral : MOOD_COLORS.neutral;
           const is_future = cell.date_str > today_str;
 
@@ -161,19 +164,32 @@ export const JournalCalendar = ({
               `}
             >
               {cell.day}
-              {has_entry && (
-                <span className={`absolute bottom-0.5 h-1.5 w-1.5 rounded-full ${mood_color}`} />
-              )}
+              <div className="absolute bottom-0.5 flex items-center gap-0.5">
+                {has_entry && (
+                  <span className={`h-1.5 w-1.5 rounded-full ${mood_color}`} />
+                )}
+                {has_movie && (
+                  <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="text-amber-400">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                )}
+              </div>
             </button>
           );
         })}
       </div>
 
       {/* Legend */}
-      <div className="mt-4 flex items-center gap-3 text-[10px] text-zinc-500">
+      <div className="mt-4 flex flex-wrap items-center gap-3 text-[10px] text-zinc-500">
         <span className="flex items-center gap-1">
           <span className="inline-block h-1.5 w-1.5 rounded-full bg-zinc-400" />
           Entry
+        </span>
+        <span className="flex items-center gap-1">
+          <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="text-amber-400">
+            <path d="M8 5v14l11-7z" />
+          </svg>
+          Movie
         </span>
         <span className="flex items-center gap-1">
           <span className="inline-block h-2 w-2 rounded-sm bg-amber-500/25 ring-1 ring-amber-500/50" />

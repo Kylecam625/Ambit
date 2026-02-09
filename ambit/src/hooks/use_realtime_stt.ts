@@ -70,24 +70,25 @@ const CAMERA_CAPTURE_ATTEMPTS = 20;
 const CAMERA_CAPTURE_DELAY_MS = 150;
 
 /* ------------------------------------------------------------------ */
-/*  Farewell detection                                                 */
+/*  Strip wake phrase from transcripts                                 */
 /* ------------------------------------------------------------------ */
 
-const FAREWELL_PATTERNS: RegExp[] = [
-  /\b(good\s*bye|bye)\b/i,
-  /\bsee\s+you\b/i,
-  /\bi[''']?m\s+(leaving|done|out)\b/i,
-  /\bthat[''']?s\s+all\b/i,
-  /\bgood\s*night\b/i,
-  /\btalk\s+to\s+you\s+later\b/i,
-  /\bcatch\s+you\s+later\b/i,
-  /\bpeace\s+out\b/i,
-  /\blater\s+ambit\b/i,
-  /\bbye\s+ambit\b/i,
-];
+/** Remove "Hey Ambit" / "Ambit" from the start of a transcript so the
+ *  AI doesn't mistake the wake word for the user's name. */
+const strip_wake_phrase = (text: string): string => {
+  return text
+    .replace(/^\s*(hey\s+)?ambit[,.:!?\s]*/i, "")
+    .trim();
+};
 
-const is_farewell = (text: string): boolean =>
-  FAREWELL_PATTERNS.some((p) => p.test(text));
+/* ------------------------------------------------------------------ */
+/*  Session action detection                                           */
+/* ------------------------------------------------------------------ */
+
+// Session ending is now handled server-side via the end_session tool.
+// When the AI decides to end the session, the response includes
+// session_action: "end". The client waits for TTS to finish, then
+// fires the on_farewell callback.
 
 /* ------------------------------------------------------------------ */
 /*  Main hook                                                          */
@@ -142,6 +143,9 @@ export const useRealtimeStt = ({
   const [used_web_search, set_used_web_search] = useState(false);
   const [error_message, set_error_message] = useState<string | null>(null);
   const [response_error, set_response_error] = useState<string | null>(null);
+
+  /* ---- Session end after TTS ---- */
+  const end_after_tts_ref = useRef(false);
 
   /* ---- TTS state ---- */
   const tts_request_id_ref = useRef(0);
@@ -326,6 +330,16 @@ export const useRealtimeStt = ({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ action: "restore" }),
           }).catch(() => {});
+
+          // If the AI called end_session, fire the farewell callback
+          // now that the goodbye response has finished playing.
+          if (end_after_tts_ref.current) {
+            end_after_tts_ref.current = false;
+            console.log("[STT] Session ending after TTS (end_session tool)");
+            setTimeout(() => {
+              on_farewell_ref.current?.();
+            }, 500);
+          }
         };
         await audio.play().catch(() => set_is_tts_playing(false));
       } catch (error) {
@@ -384,6 +398,7 @@ export const useRealtimeStt = ({
           response_id,
           conversation_id,
           used_web_search: ws,
+          session_action,
         }: {
           speech_text: string;
           history: unknown;
@@ -391,6 +406,7 @@ export const useRealtimeStt = ({
           response_id?: string;
           conversation_id?: string;
           used_web_search?: boolean;
+          session_action?: string;
         }) => {
           const updated_history =
             strip_elevenlabs_v3_audio_tags_from_messages(
@@ -413,6 +429,12 @@ export const useRealtimeStt = ({
             conversation_id,
             next_message_seq,
           });
+
+          // If the server signaled session end (AI called end_session tool),
+          // flag that we should end the session after TTS finishes playing.
+          if (session_action === "end") {
+            end_after_tts_ref.current = true;
+          }
         };
 
         /* --- Streaming path --- */
@@ -551,6 +573,10 @@ export const useRealtimeStt = ({
                 typeof done_payload["used_web_search"] === "boolean"
                   ? done_payload["used_web_search"]
                   : false,
+              session_action:
+                typeof done_payload["session_action"] === "string"
+                  ? done_payload["session_action"]
+                  : undefined,
             });
             return true;
           } catch (error) {
@@ -702,6 +728,10 @@ export const useRealtimeStt = ({
                 typeof tool_data?.used_web_search === "boolean"
                   ? tool_data.used_web_search
                   : false,
+              session_action:
+                typeof tool_data?.session_action === "string"
+                  ? tool_data.session_action
+                  : undefined,
             });
             return;
           }
@@ -728,6 +758,10 @@ export const useRealtimeStt = ({
               typeof data?.used_web_search === "boolean"
                 ? data.used_web_search
                 : false,
+            session_action:
+              typeof data?.session_action === "string"
+                ? data.session_action
+                : undefined,
           });
         };
 
@@ -814,20 +848,15 @@ export const useRealtimeStt = ({
             set_transcript(trimmed_text);
             on_activity_ref.current?.();
 
-            // Check for farewell phrases before requesting a response
-            if (is_farewell(trimmed_text)) {
-              console.log("[STT] Farewell detected:", trimmed_text);
-              // Still request the response so Ambit can say goodbye back
-              void request_response({ text: trimmed_text });
-              // Fire farewell callback after a short delay to let the
-              // goodbye response play before the session ends
-              setTimeout(() => {
-                on_farewell_ref.current?.();
-              }, 4_000);
-              break;
-            }
+            // Strip "Hey Ambit" from the start so the AI doesn't
+            // mistake the wake phrase for the user's name.
+            const cleaned_text = strip_wake_phrase(trimmed_text);
+            if (!cleaned_text) break; // nothing left after stripping
 
-            void request_response({ text: trimmed_text });
+            // Session ending is now handled via the end_session tool.
+            // The AI decides when to end and the response includes
+            // session_action: "end". See the audio.onended handler below.
+            void request_response({ text: cleaned_text });
           }
           break;
 
@@ -868,7 +897,17 @@ export const useRealtimeStt = ({
   /*  Connection lifecycle                                             */
   /* ---------------------------------------------------------------- */
 
-  const start_realtime = useCallback(async () => {
+  const start_realtime = useCallback(async ({
+    pre_buffer,
+    pre_buffer_sample_rate,
+  }: {
+    /** Optional pre-recorded audio (Float32) captured by the wake word listener
+     *  before the connection was established. Injected into the OpenAI stream
+     *  immediately after the mic starts so the first utterance is not lost. */
+    pre_buffer?: Float32Array | null;
+    /** Sample rate of pre_buffer (default 16000 — the wake word listener rate). */
+    pre_buffer_sample_rate?: number;
+  } = {}) => {
     if (is_connected) return;
     set_error_message(null);
 
@@ -913,6 +952,12 @@ export const useRealtimeStt = ({
         }
       })();
 
+      // Inject pre-buffered audio (captured during wake word detection) into
+      // the stream so OpenAI receives the full utterance seamlessly.
+      if (pre_buffer && pre_buffer.length > 0) {
+        client.send_buffered_audio(pre_buffer, pre_buffer_sample_rate ?? 16_000);
+      }
+
       client_ref.current = client;
       set_is_connected(true);
     } catch (error) {
@@ -950,6 +995,7 @@ export const useRealtimeStt = ({
     is_speaking_ref.current = false;
     set_is_speaking(false);
     last_spoken_text_ref.current = "";
+    end_after_tts_ref.current = false;
     cancel_tts();
     conversation.reset_conversation();
   }, [cancel_tts, cancel_response, conversation, image_polling]);

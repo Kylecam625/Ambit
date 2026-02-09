@@ -1,94 +1,41 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 /* ------------------------------------------------------------------ */
-/*  Wake word detection via mic energy monitoring + Whisper             */
+/*  Wake word detection via OpenWakeWord WebSocket service              */
 /*                                                                     */
-/*  Captures raw PCM audio into a ring buffer using ScriptProcessorNode*/
-/*  so the last ~1.5 s of audio is always available. When speech energy */
-/*  is detected and then followed by silence, the relevant PCM is      */
-/*  encoded as a WAV file and sent to Whisper for transcription.       */
+/*  Streams raw 16 kHz PCM audio to a Python OpenWakeWord service      */
+/*  over WebSocket. The service runs inference in real-time and sends   */
+/*  back a detection event when the wake word is heard.                 */
 /*                                                                     */
-/*  Cost: ~$0.0001 per check (only when speech is detected).           */
+/*  A ring buffer keeps the last ~5 s of audio so that speech spoken   */
+/*  *after* the wake word ("hey ambit, whats the weather") is captured */
+/*  and can be forwarded to the OpenAI Realtime connection.            */
 /* ------------------------------------------------------------------ */
-
-/* ---- Wake phrase patterns ---- */
-
-const WAKE_PATTERNS: RegExp[] = [
-  /\bhey\s+ambit\b/i,
-  /\bhey\s+ambient\b/i,
-  /\bhey\s+amber\b/i,
-  /\bhey\s+ambert\b/i,
-  /\bhey\s+am\s*bit\b/i,
-  /\ba\s+ambit\b/i,
-  /\bhey\s+emmett?\b/i,
-  /\bhey\s+am\w*t\b/i,
-];
-
-const is_wake_phrase = (text: string): boolean =>
-  WAKE_PATTERNS.some((p) => p.test(text));
 
 /* ---- Constants ---- */
 
-const SAMPLE_RATE = 16_000; // 16 kHz — plenty for speech, keeps files small
-const ENERGY_THRESHOLD = 0.012;
-const SPEECH_ONSET_MS = 150;
-const SILENCE_AFTER_SPEECH_MS = 600;
-const MAX_SPEECH_MS = 4_000;
-/** Pre-roll: how many seconds of audio to keep before speech onset. */
-const PRE_ROLL_SECONDS = 1.0;
-const PRE_ROLL_SAMPLES = Math.ceil(SAMPLE_RATE * PRE_ROLL_SECONDS);
-/** Ring buffer size: pre-roll + max speech duration with padding. */
-const RING_BUFFER_SAMPLES = Math.ceil(SAMPLE_RATE * (PRE_ROLL_SECONDS + MAX_SPEECH_MS / 1000 + 1));
+const SAMPLE_RATE = 16_000; // 16 kHz — matches OpenWakeWord expectation
+const RING_BUFFER_SECONDS = 5;
+const RING_BUFFER_SAMPLES = SAMPLE_RATE * RING_BUFFER_SECONDS;
+
+/**
+ * How many seconds of audio *after* the wake-word detection to include
+ * in the pre-buffer that gets forwarded to OpenAI. This captures the
+ * tail of "hey ambit, whats the weather today" so nothing is lost.
+ */
+const POST_WAKE_CAPTURE_MS = 300;
+
 const COOLDOWN_MS = 3_000;
-const CHECK_COOLDOWN_MS = 800;
-const POLL_INTERVAL_MS = 50;
+const WS_RECONNECT_DELAY_MS = 2_000;
+const WS_MAX_RECONNECT_DELAY_MS = 30_000;
 
-/* ---- WAV encoder ---- */
+/** ScriptProcessorNode buffer size (must be power of 2). */
+const PROCESSOR_BUFFER_SIZE = 4096;
 
-const encode_wav = (samples: Float32Array, sample_rate: number): Blob => {
-  const num_samples = samples.length;
-  const bytes_per_sample = 2; // 16-bit PCM
-  const data_size = num_samples * bytes_per_sample;
-  const buffer = new ArrayBuffer(44 + data_size);
-  const view = new DataView(buffer);
+/** How often we send audio to the service (ms). Smaller = lower latency. */
+const SEND_INTERVAL_MS = 80; // ~1280 samples @ 16 kHz = 1 OWW frame
 
-  const write_string = (offset: number, str: string) => {
-    for (let i = 0; i < str.length; i++) {
-      view.setUint8(offset + i, str.charCodeAt(i));
-    }
-  };
-
-  // RIFF header
-  write_string(0, "RIFF");
-  view.setUint32(4, 36 + data_size, true);
-  write_string(8, "WAVE");
-
-  // fmt chunk
-  write_string(12, "fmt ");
-  view.setUint32(16, 16, true); // chunk size
-  view.setUint16(20, 1, true); // PCM format
-  view.setUint16(22, 1, true); // mono
-  view.setUint32(24, sample_rate, true);
-  view.setUint32(28, sample_rate * bytes_per_sample, true); // byte rate
-  view.setUint16(32, bytes_per_sample, true); // block align
-  view.setUint16(34, 16, true); // bits per sample
-
-  // data chunk
-  write_string(36, "data");
-  view.setUint32(40, data_size, true);
-
-  // Convert float32 → int16
-  let offset = 44;
-  for (let i = 0; i < num_samples; i++) {
-    const s = Math.max(-1, Math.min(1, samples[i]));
-    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-    offset += 2;
-  }
-
-  return new Blob([buffer], { type: "audio/wav" });
-};
-
-/* ---- Ring buffer ---- */
+/* ---- Ring buffer (Float32) ---- */
 
 class RingBuffer {
   private buffer: Float32Array;
@@ -99,7 +46,6 @@ class RingBuffer {
     this.buffer = new Float32Array(capacity);
   }
 
-  /** Append samples to the ring buffer. */
   push(samples: Float32Array): void {
     for (let i = 0; i < samples.length; i++) {
       this.buffer[this.write_pos] = samples[i];
@@ -121,22 +67,23 @@ class RingBuffer {
     return result;
   }
 
-  /** Reset the buffer. */
   clear(): void {
     this.write_pos = 0;
     this.total_written = 0;
   }
 }
 
-/* ---- Types ---- */
+/* ---- Helpers ---- */
 
-type ListenerPhase =
-  | "idle"
-  | "onset"
-  | "speech"
-  | "trailing"
-  | "checking"
-  | "cooldown";
+/** Convert Float32 audio → Int16 PCM bytes for the wake word service. */
+const float32_to_int16_bytes = (samples: Float32Array): ArrayBuffer => {
+  const int16 = new Int16Array(samples.length);
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+  }
+  return int16.buffer;
+};
 
 /* ---- Hook ---- */
 
@@ -144,7 +91,10 @@ export const use_wake_word = ({
   on_wake,
   enabled = true,
 }: {
-  on_wake: () => void;
+  /** Called when the wake word is detected. Receives a Float32Array of buffered
+   *  audio (16 kHz) captured *after* the wake word — this is the user's query
+   *  that should be forwarded to the OpenAI Realtime connection. */
+  on_wake: (post_wake_audio: Float32Array) => void;
   enabled?: boolean;
 }) => {
   const [is_listening, set_is_listening] = useState(false);
@@ -155,164 +105,146 @@ export const use_wake_word = ({
   // Audio resources
   const stream_ref = useRef<MediaStream | null>(null);
   const audio_ctx_ref = useRef<AudioContext | null>(null);
-  const analyser_ref = useRef<AnalyserNode | null>(null);
   const processor_ref = useRef<ScriptProcessorNode | null>(null);
   const ring_ref = useRef<RingBuffer | null>(null);
 
-  // State machine
-  const phase_ref = useRef<ListenerPhase>("idle");
-  const onset_start_ref = useRef(0);
-  const speech_start_ref = useRef(0);
-  const silence_start_ref = useRef(0);
-  const poll_timer_ref = useRef<ReturnType<typeof setInterval> | null>(null);
+  // WebSocket
+  const ws_ref = useRef<WebSocket | null>(null);
+  const ws_reconnect_timer_ref = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ws_reconnect_delay_ref = useRef(WS_RECONNECT_DELAY_MS);
   const intentionally_stopped_ref = useRef(false);
+
+  // Sending buffer — accumulate audio and send at regular intervals
+  const send_buffer_ref = useRef<Float32Array>(new Float32Array(0));
+  const send_timer_ref = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Cooldown
+  const last_detection_ref = useRef(0);
 
   useEffect(() => { on_wake_ref.current = on_wake; }, [on_wake]);
   useEffect(() => { enabled_ref.current = enabled; }, [enabled]);
 
-  /* ---- Compute RMS from analyser ---- */
-  const get_rms = useCallback((): number => {
-    const analyser = analyser_ref.current;
-    if (!analyser) return 0;
-    const data = new Float32Array(analyser.fftSize);
-    analyser.getFloatTimeDomainData(data);
-    let sum = 0;
-    for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
-    return Math.sqrt(sum / data.length);
+  /* ---- Get the WebSocket URL ---- */
+  const get_ws_url = useCallback((): string => {
+    // Use NEXT_PUBLIC env var (available in browser)
+    const env_url =
+      typeof process !== "undefined"
+        ? (process.env?.NEXT_PUBLIC_WAKE_WORD_SERVICE_URL ?? "")
+        : "";
+    if (env_url) return env_url.replace(/\/$/, "") + "/ws";
+    return "ws://localhost:9876/ws";
   }, []);
 
-  /* ---- Send audio to Whisper ---- */
-  const check_audio = useCallback(async (wav_blob: Blob) => {
+  /* ---- Send accumulated audio to the service ---- */
+  const flush_send_buffer = useCallback(() => {
+    const ws = ws_ref.current;
+    const buf = send_buffer_ref.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN || buf.length === 0) return;
+
     try {
-      const form = new FormData();
-      form.append("audio", wav_blob, "wake.wav");
-      const response = await fetch("/api/wake-word/check", {
-        method: "POST",
-        body: form,
-      });
-      if (!response.ok) {
-        console.warn("[WakeWord] Whisper check failed:", response.status);
-        return null;
-      }
-      const data = await response.json();
-      const transcript =
-        typeof data?.transcript === "string" ? data.transcript : "";
-      console.log(`[WakeWord] Whisper transcript: "${transcript}"`);
-      return transcript;
-    } catch (error) {
-      console.warn("[WakeWord] Check error:", error);
-      return null;
+      ws.send(float32_to_int16_bytes(buf));
+    } catch {
+      // WebSocket may have closed between the check and the send
     }
+    send_buffer_ref.current = new Float32Array(0);
   }, []);
 
-  /* ---- Extract audio from ring buffer and check ---- */
-  const finalize_and_check = useCallback(async () => {
-    phase_ref.current = "checking";
-    const ring = ring_ref.current;
-    if (!ring) {
-      phase_ref.current = "idle";
-      return;
-    }
-
-    // How many samples to extract: pre-roll + speech duration
-    const speech_duration_ms = Date.now() - speech_start_ref.current;
-    const speech_samples = Math.ceil((speech_duration_ms / 1000) * SAMPLE_RATE);
-    const total_samples = PRE_ROLL_SAMPLES + speech_samples;
-
-    const pcm = ring.read_last(total_samples);
-    const duration_ms = (pcm.length / SAMPLE_RATE) * 1000;
-    console.log(
-      `[WakeWord] Encoding WAV (${Math.round(duration_ms)}ms, ${pcm.length} samples)`
-    );
-
-    // Skip very short clips
-    if (pcm.length < SAMPLE_RATE * 0.3) {
-      console.log("[WakeWord] Clip too short, skipping");
-      phase_ref.current = "idle";
-      return;
-    }
-
-    const wav = encode_wav(pcm, SAMPLE_RATE);
-    const transcript = await check_audio(wav);
-
+  /* ---- WebSocket connection ---- */
+  const connect_ws = useCallback(() => {
     if (intentionally_stopped_ref.current) return;
+    if (ws_ref.current && ws_ref.current.readyState <= WebSocket.OPEN) return;
 
-    if (transcript && is_wake_phrase(transcript)) {
-      console.log("[WakeWord] *** WAKE PHRASE MATCHED ***");
-      phase_ref.current = "cooldown";
-      on_wake_ref.current();
-      return;
-    }
+    const url = get_ws_url();
+    console.log("[WakeWord] Connecting to", url);
 
-    phase_ref.current = "cooldown";
-    setTimeout(() => {
-      if (!intentionally_stopped_ref.current && enabled_ref.current) {
-        phase_ref.current = "idle";
-      }
-    }, CHECK_COOLDOWN_MS);
-  }, [check_audio]);
+    const ws = new WebSocket(url);
+    ws_ref.current = ws;
 
-  /* ---- Poll loop ---- */
-  const start_polling = useCallback(() => {
-    if (poll_timer_ref.current) clearInterval(poll_timer_ref.current);
-    phase_ref.current = "idle";
+    ws.binaryType = "arraybuffer";
 
-    poll_timer_ref.current = setInterval(() => {
+    ws.onopen = () => {
+      console.log("[WakeWord] WebSocket connected");
+      ws_reconnect_delay_ref.current = WS_RECONNECT_DELAY_MS; // reset backoff
+    };
+
+    ws.onmessage = (event) => {
       if (intentionally_stopped_ref.current) return;
 
-      const rms = get_rms();
-      const now = Date.now();
-      const is_loud = rms > ENERGY_THRESHOLD;
-      const phase = phase_ref.current;
+      try {
+        const data = JSON.parse(event.data as string) as Record<string, unknown>;
+        if (data.type === "wake_detected") {
+          const now = Date.now();
+          if (now - last_detection_ref.current < COOLDOWN_MS) return;
+          last_detection_ref.current = now;
 
-      switch (phase) {
-        case "idle":
-          if (is_loud) {
-            onset_start_ref.current = now;
-            phase_ref.current = "onset";
-          }
-          break;
+          console.log(
+            `[WakeWord] *** WAKE DETECTED *** (model=${data.model}, score=${data.score})`
+          );
 
-        case "onset":
-          if (!is_loud) {
-            phase_ref.current = "idle";
-          } else if (now - onset_start_ref.current >= SPEECH_ONSET_MS) {
-            speech_start_ref.current = now;
-            phase_ref.current = "speech";
-            console.log("[WakeWord] Speech detected, capturing...");
-          }
-          break;
+          // Wait a tiny bit for any trailing speech to land in the ring buffer
+          setTimeout(() => {
+            const ring = ring_ref.current;
+            // Grab the last ~POST_WAKE_CAPTURE_MS of audio as the user's query.
+            // This is an approximation — the wake word may have ended up to ~200ms
+            // before the detection event arrived, so we grab a generous buffer.
+            const capture_samples = Math.ceil(
+              (POST_WAKE_CAPTURE_MS / 1000) * SAMPLE_RATE
+            );
+            const post_wake = ring
+              ? ring.read_last(capture_samples)
+              : new Float32Array(0);
 
-        case "speech":
-          if (!is_loud) {
-            silence_start_ref.current = now;
-            phase_ref.current = "trailing";
-          } else if (now - speech_start_ref.current >= MAX_SPEECH_MS) {
-            void finalize_and_check();
-          }
-          break;
-
-        case "trailing":
-          if (is_loud) {
-            phase_ref.current = "speech";
-          } else if (now - silence_start_ref.current >= SILENCE_AFTER_SPEECH_MS) {
-            void finalize_and_check();
-          }
-          break;
+            on_wake_ref.current(post_wake);
+          }, POST_WAKE_CAPTURE_MS);
+        }
+      } catch {
+        // non-JSON message, ignore
       }
-    }, POLL_INTERVAL_MS);
-  }, [get_rms, finalize_and_check]);
+    };
+
+    ws.onclose = () => {
+      ws_ref.current = null;
+      if (intentionally_stopped_ref.current) return;
+
+      // Reconnect with exponential backoff
+      const delay = ws_reconnect_delay_ref.current;
+      console.log(`[WakeWord] WebSocket closed, reconnecting in ${delay}ms`);
+      ws_reconnect_timer_ref.current = setTimeout(() => {
+        ws_reconnect_delay_ref.current = Math.min(
+          delay * 2,
+          WS_MAX_RECONNECT_DELAY_MS
+        );
+        connect_ws();
+      }, delay);
+    };
+
+    ws.onerror = () => {
+      // onclose will fire after onerror, so reconnect logic is handled there
+    };
+  }, [get_ws_url, flush_send_buffer]);
 
   /* ---- Stop ---- */
   const stop_listening = useCallback(() => {
     intentionally_stopped_ref.current = true;
 
-    if (poll_timer_ref.current) {
-      clearInterval(poll_timer_ref.current);
-      poll_timer_ref.current = null;
+    // Stop send timer
+    if (send_timer_ref.current) {
+      clearInterval(send_timer_ref.current);
+      send_timer_ref.current = null;
     }
 
-    // Disconnect and close the ScriptProcessorNode
+    // Close WebSocket
+    if (ws_reconnect_timer_ref.current) {
+      clearTimeout(ws_reconnect_timer_ref.current);
+      ws_reconnect_timer_ref.current = null;
+    }
+    if (ws_ref.current) {
+      ws_ref.current.onclose = null; // prevent reconnect
+      ws_ref.current.close();
+      ws_ref.current = null;
+    }
+
+    // Disconnect audio nodes
     const proc = processor_ref.current;
     if (proc) {
       proc.disconnect();
@@ -323,7 +255,6 @@ export const use_wake_word = ({
       try { audio_ctx_ref.current.close(); } catch { /* noop */ }
       audio_ctx_ref.current = null;
     }
-    analyser_ref.current = null;
 
     if (stream_ref.current) {
       stream_ref.current.getTracks().forEach((t) => t.stop());
@@ -331,7 +262,7 @@ export const use_wake_word = ({
     }
 
     ring_ref.current?.clear();
-    phase_ref.current = "idle";
+    send_buffer_ref.current = new Float32Array(0);
     set_is_listening(false);
     console.log("[WakeWord] Stopped");
   }, []);
@@ -342,6 +273,7 @@ export const use_wake_word = ({
     intentionally_stopped_ref.current = false;
 
     try {
+      // Mic capture at 16 kHz for OpenWakeWord
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           sampleRate: SAMPLE_RATE,
@@ -356,35 +288,45 @@ export const use_wake_word = ({
       audio_ctx_ref.current = ctx;
       const source = ctx.createMediaStreamSource(stream);
 
-      // AnalyserNode for RMS energy monitoring
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 2048;
-      analyser_ref.current = analyser;
-
-      // ScriptProcessorNode to capture raw PCM into ring buffer
+      // Ring buffer for capturing post-wake-word audio
       const ring = new RingBuffer(RING_BUFFER_SAMPLES);
       ring_ref.current = ring;
 
-      const processor = ctx.createScriptProcessor(4096, 1, 1);
+      // ScriptProcessorNode to capture PCM into ring buffer + send buffer
+      const processor = ctx.createScriptProcessor(PROCESSOR_BUFFER_SIZE, 1, 1);
       processor.onaudioprocess = (e) => {
         const input = e.inputBuffer.getChannelData(0);
         ring.push(input);
+
+        // Accumulate for sending to the wake word service
+        const prev = send_buffer_ref.current;
+        const combined = new Float32Array(prev.length + input.length);
+        combined.set(prev, 0);
+        combined.set(input, prev.length);
+        send_buffer_ref.current = combined;
       };
       processor_ref.current = processor;
 
-      // Connect: source → analyser → processor → destination (required for ScriptProcessor)
-      source.connect(analyser);
-      analyser.connect(processor);
-      processor.connect(ctx.destination);
+      // Connect: source → processor → destination (required for ScriptProcessor to fire)
+      const gain = ctx.createGain();
+      gain.gain.value = 0; // mute monitoring
+      source.connect(processor);
+      processor.connect(gain);
+      gain.connect(ctx.destination);
 
-      start_polling();
+      // Start sending audio at a regular interval
+      send_timer_ref.current = setInterval(flush_send_buffer, SEND_INTERVAL_MS);
+
+      // Connect WebSocket to the wake word service
+      connect_ws();
+
       set_is_listening(true);
-      console.log("[WakeWord] Listening started (PCM ring buffer + Whisper)");
+      console.log("[WakeWord] Listening started (OpenWakeWord WebSocket)");
     } catch (error) {
       console.warn("[WakeWord] Failed to start:", error);
       set_is_listening(false);
     }
-  }, [stop_listening, start_polling]);
+  }, [stop_listening, flush_send_buffer, connect_ws]);
 
   /* ---- Auto-start/stop ---- */
   useEffect(() => {

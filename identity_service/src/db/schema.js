@@ -69,6 +69,24 @@ CREATE TABLE IF NOT EXISTS journal_entries (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_journal_profile_date ON journal_entries(profile_id, entry_date);
 CREATE INDEX IF NOT EXISTS idx_journal_profile_id ON journal_entries(profile_id);
+
+CREATE TABLE IF NOT EXISTS journal_movies (
+  movie_id TEXT PRIMARY KEY,
+  profile_id TEXT NOT NULL,
+  entry_date TEXT NOT NULL,
+  version INTEGER NOT NULL DEFAULT 1,
+  voice_id TEXT NOT NULL,
+  voice_name TEXT,
+  segments_json TEXT NOT NULL,
+  audio_base64 TEXT NOT NULL,
+  alignment_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'generating',
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (profile_id) REFERENCES profiles(profile_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_journal_movies_profile_date ON journal_movies(profile_id, entry_date);
+CREATE INDEX IF NOT EXISTS idx_journal_movies_profile_id ON journal_movies(profile_id);
 `;
 
 const ensure_profile_columns = (db) => {

@@ -30,6 +30,8 @@ type JournalEditorProps = {
   on_save: (html: string, text: string) => void;
   is_saving: boolean;
   save_status: "idle" | "saving" | "saved" | "error";
+  on_generate_movie?: () => void;
+  has_entry?: boolean;
 };
 
 export const JournalEditor = ({
@@ -37,6 +39,8 @@ export const JournalEditor = ({
   on_save,
   is_saving,
   save_status,
+  on_generate_movie,
+  has_entry,
 }: JournalEditorProps) => {
   const [has_unsaved_changes, set_has_unsaved_changes] = useState(false);
   const auto_save_timer_ref = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -119,7 +123,7 @@ export const JournalEditor = ({
   return (
     <div className="flex flex-col rounded-xl border border-white/10 bg-white/5 backdrop-blur-sm overflow-hidden">
       {/* Toolbar */}
-      <JournalToolbar editor={editor} />
+      <JournalToolbar editor={editor} on_generate_movie={on_generate_movie} has_entry={has_entry} />
 
       {/* Editor content area */}
       <div className="flex-1 overflow-y-auto max-h-[60vh]">

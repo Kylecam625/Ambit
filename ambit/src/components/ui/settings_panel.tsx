@@ -14,6 +14,8 @@ import type {
 } from "@/lib/identity/identity_types";
 import type { memory_cleanup_suggestion } from "@/lib/identity/memory_extractor";
 
+type settings_tab = "audio" | "spotify";
+
 type SettingsPanelProps = {
   is_loading_mics: boolean;
   is_loading_voices: boolean;
@@ -123,6 +125,7 @@ export const SettingsPanel = ({
   on_identity_analyze_memory,
 }: SettingsPanelProps) => {
   const [is_open, set_is_open] = useState(false);
+  const [active_tab, set_active_tab] = useState<settings_tab>("audio");
   const [is_voice_picker_open, set_is_voice_picker_open] = useState(false);
   const [is_profiles_open, set_is_profiles_open] = useState(false);
 
@@ -186,105 +189,168 @@ export const SettingsPanel = ({
         </svg>
       </button>
 
-      {/* Settings dropdown */}
+      {/* ---------------------------------------------------------------- */}
+      {/*  Settings modal                                                   */}
+      {/* ---------------------------------------------------------------- */}
       {is_open && (
-        <div className="glass-panel absolute right-0 top-12 z-50 w-[min(360px,calc(100vw-1.5rem))] rounded-lg p-5 shadow-2xl animate-fade-in-scale">
-          <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-white">
-                Settings
-              </h3>
-              <button
-                className="text-zinc-400 hover:text-zinc-100"
-                onClick={close_settings}
-                type="button"
-                aria-label="Close settings"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/70 backdrop-blur-md"
+            onClick={close_settings}
+          />
+
+          {/* Centered card */}
+          <div className="flex min-h-full items-center justify-center p-3 sm:p-6">
+            <div
+              className="glass-panel relative flex w-full max-w-lg flex-col rounded-2xl shadow-2xl animate-fade-in-scale"
+              onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-label="Settings"
+            >
+              {/* ---- Header ---- */}
+              <div className="flex items-center justify-between px-5 pt-5 sm:px-6 sm:pt-6">
+                <h3 className="text-lg font-bold text-white">Settings</h3>
+                <button
+                  className="rounded-lg p-1.5 text-zinc-400 hover:text-zinc-100 transition-colors"
+                  onClick={close_settings}
+                  type="button"
+                  aria-label="Close settings"
                 >
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
-            </div>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
 
-            <MicSelector
-              is_loading={is_loading_mics}
-              mic_devices={mic_devices}
-              selected_mic_id={selected_mic_id}
-              on_load_mics={on_load_mics}
-              on_select_mic={on_select_mic}
-            />
+              {/* ---- Tabs ---- */}
+              <div className="flex gap-1 px-5 pt-4 sm:px-6">
+                {(["audio", "spotify"] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    className={`rounded-lg px-4 py-2 text-sm font-bold transition-colors ${
+                      active_tab === tab
+                        ? "bg-zinc-800 text-white"
+                        : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+                    }`}
+                    onClick={() => set_active_tab(tab)}
+                    type="button"
+                  >
+                    {tab === "audio" ? "Audio" : "Spotify"}
+                  </button>
+                ))}
+              </div>
 
-            <VoiceQualitySelector
-              quality={voice_quality}
-              on_change={on_voice_quality_change}
-            />
+              {/* ---- Scrollable content ---- */}
+              <div className="max-h-[65vh] overflow-y-auto px-5 py-5 sm:px-6">
+                {/* ================================================= */}
+                {/*  Audio tab                                          */}
+                {/* ================================================= */}
+                {active_tab === "audio" && (
+                  <div className="flex flex-col gap-5">
+                    {/* Microphone */}
+                    <MicSelector
+                      is_loading={is_loading_mics}
+                      mic_devices={mic_devices}
+                      selected_mic_id={selected_mic_id}
+                      on_load_mics={on_load_mics}
+                      on_select_mic={on_select_mic}
+                    />
 
-            <ThinkingSoundsToggle
-              enabled={thinking_sounds_enabled}
-              on_change={on_thinking_sounds_change}
-            />
+                    <div className="border-t border-zinc-800" />
 
-            <SpotifySettings />
+                    {/* Voice selection */}
+                    <div className="flex flex-col gap-2">
+                      <label className="text-sm font-bold uppercase tracking-[0.15em] text-zinc-300">
+                        Voice
+                      </label>
+                      {voice_error && (
+                        <p className="text-xs text-red-400">{voice_error}</p>
+                      )}
+                      <VoicePicker
+                        onOpenChange={handle_voice_open_change}
+                        onValueChange={(voice_id) =>
+                          handle_select_voice(voice_id || null)
+                        }
+                        open={is_voice_picker_open}
+                        placeholder={
+                          is_loading_voices
+                            ? "Loading voices..."
+                            : "Select a voice..."
+                        }
+                        value={selected_voice_id ?? ""}
+                        voices={voice_options}
+                      />
+                    </div>
 
-            {/* Voice selection */}
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-bold uppercase tracking-[0.15em] text-zinc-300">
-                Voice
-              </label>
-              {voice_error && (
-                <p className="text-xs text-red-400">{voice_error}</p>
-              )}
-              <VoicePicker
-                onOpenChange={handle_voice_open_change}
-                onValueChange={(voice_id) =>
-                  handle_select_voice(voice_id || null)
-                }
-                open={is_voice_picker_open}
-                placeholder={
-                  is_loading_voices ? "Loading voices..." : "Select a voice..."
-                }
-                value={selected_voice_id ?? ""}
-                voices={voice_options}
-              />
-            </div>
+                    <div className="border-t border-zinc-800" />
 
-            {/* Profiles shortcut */}
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-bold uppercase tracking-[0.15em] text-zinc-300">
-                Profiles
-              </label>
-              <p className="text-sm text-zinc-400">
-                {profiles.length} total
-              </p>
-              <button
-                className="rounded-lg border-2 border-zinc-700 bg-zinc-950 px-4 py-2.5 text-left text-sm font-bold text-zinc-100 hover:border-zinc-500 disabled:opacity-50"
-                onClick={() => {
-                  close_settings();
-                  set_is_profiles_open(true);
-                }}
-                disabled={is_disabled}
-                type="button"
-              >
-                Manage Profiles
-              </button>
+                    {/* Voice mode */}
+                    <VoiceQualitySelector
+                      quality={voice_quality}
+                      on_change={on_voice_quality_change}
+                    />
+
+                    <div className="border-t border-zinc-800" />
+
+                    {/* Loading sounds */}
+                    <ThinkingSoundsToggle
+                      enabled={thinking_sounds_enabled}
+                      on_change={on_thinking_sounds_change}
+                    />
+                  </div>
+                )}
+
+                {/* ================================================= */}
+                {/*  Spotify tab                                        */}
+                {/* ================================================= */}
+                {active_tab === "spotify" && (
+                  <SpotifySettings />
+                )}
+              </div>
+
+              {/* ---- Footer: Profiles ---- */}
+              <div className="flex items-center justify-between border-t border-zinc-800 px-5 py-4 sm:px-6">
+                <div className="flex flex-col">
+                  <span className="text-xs font-bold uppercase tracking-[0.15em] text-zinc-400">
+                    Profiles
+                  </span>
+                  <span className="text-sm text-zinc-500">
+                    {profiles.length} total
+                  </span>
+                </div>
+                <button
+                  className="rounded-lg border-2 border-zinc-700 bg-zinc-950 px-4 py-2 text-sm font-bold text-zinc-100 hover:border-zinc-500 disabled:opacity-50 transition-colors"
+                  onClick={() => {
+                    close_settings();
+                    set_is_profiles_open(true);
+                  }}
+                  disabled={is_disabled}
+                  type="button"
+                >
+                  Manage Profiles
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Profiles modal */}
+      {/* ---------------------------------------------------------------- */}
+      {/*  Profiles modal (unchanged)                                       */}
+      {/* ---------------------------------------------------------------- */}
       {is_profiles_open && (
         <div className="fixed inset-0 z-40 overflow-y-auto">
           <div

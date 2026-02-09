@@ -81,3 +81,34 @@ export type identity_journal_entry_summary = {
   updated_at: string;
 };
 
+export type journal_movie_segment = {
+  text: string;
+  image_prompt: string;
+  image_data_url: string;
+};
+
+export type journal_movie = {
+  movie_id: string;
+  profile_id: string;
+  entry_date: string;
+  version: number;
+  voice_id: string;
+  voice_name: string | null;
+  segments_json: string;
+  audio_base64: string;
+  alignment_json: string;
+  status: string;
+  created_at: string;
+};
+
+export type journal_movie_summary = {
+  movie_id: string;
+  profile_id: string;
+  entry_date: string;
+  version: number;
+  voice_id: string;
+  voice_name: string | null;
+  status: string;
+  created_at: string;
+};
+

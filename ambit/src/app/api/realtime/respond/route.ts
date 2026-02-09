@@ -373,6 +373,26 @@ If the user asks whether you're still generating the image, answer truthfully ba
           continue;
         }
 
+        if (tool_name === "end_session") {
+          // The AI wants to end the session. Continue so it can generate a
+          // goodbye response, then flag the client to close the session.
+          pending = await continue_openai_response_with_tool_output({
+            openai,
+            previous_response_id: pending.response_id,
+            conversation_id: null,
+            call_id: pending.tool_request.call_id,
+            tool_output: {
+              ok: true,
+              note: "Session will end after you say goodbye. Give a warm, brief farewell.",
+            },
+            extra_instructions,
+          });
+
+          // After the tool loop completes, we'll add session_action: "end"
+          ui_events.push({ type: "session_end_requested" });
+          continue;
+        }
+
         if (tool_name === "control_lights") {
           const action =
             typeof pending.tool_request.arguments?.["action"] === "string"
@@ -452,6 +472,11 @@ If the user asks whether you're still generating the image, answer truthfully ba
         conversation_id: pending.conversation_id || null,
       });
 
+      // Check if the AI called end_session during the tool loop
+      const has_session_end = ui_events.some(
+        (e) => e.type === "session_end_requested"
+      );
+
       return Response.json({
         speech_text: pending.speech_text,
         history: updated_history.slice(-MAX_CONVERSATION_MESSAGES),
@@ -459,6 +484,7 @@ If the user asks whether you're still generating the image, answer truthfully ba
         conversation_id: pending.conversation_id,
         ui_events: ui_events.slice(-MAX_UI_EVENTS),
         used_web_search,
+        ...(has_session_end ? { session_action: "end" } : {}),
       });
     }
 

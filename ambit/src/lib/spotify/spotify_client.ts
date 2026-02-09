@@ -1,13 +1,14 @@
 /**
  * Spotify Web API client for Ambit music control.
  *
- * Requires environment variables:
- *   SPOTIFY_CLIENT_ID
- *   SPOTIFY_CLIENT_SECRET
- *   SPOTIFY_REFRESH_TOKEN  (obtained via OAuth flow)
+ * Credentials are resolved in order:
+ *   1. Environment variables (SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, SPOTIFY_REFRESH_TOKEN)
+ *   2. Config file (.spotify_config.json) — written by the in-app setup wizard.
  *
  * The refresh token is used to obtain short-lived access tokens automatically.
  */
+
+import { load_spotify_config } from "@/lib/spotify/spotify_config";
 
 export class NoActiveDeviceError extends Error {
   constructor(message: string) {
@@ -22,11 +23,30 @@ const is_record = (value: unknown): value is Record<string, unknown> =>
 let cached_access_token: string | null = null;
 let token_expires_at = 0;
 
+/** Clear the cached access token (e.g. after disconnect or re-auth). */
+export const invalidate_spotify_token_cache = (): void => {
+  cached_access_token = null;
+  token_expires_at = 0;
+};
+
+/**
+ * Resolve Spotify credentials.
+ * Config file (.spotify_config.json) takes priority when it has values,
+ * so a re-auth through the Settings UI overrides stale .env values.
+ * Falls back to process.env for fields the config file doesn't have.
+ */
 const get_spotify_env = () => {
-  const client_id = process.env.SPOTIFY_CLIENT_ID?.trim() || "";
-  const client_secret = process.env.SPOTIFY_CLIENT_SECRET?.trim() || "";
-  const refresh_token = process.env.SPOTIFY_REFRESH_TOKEN?.trim() || "";
-  return { client_id, client_secret, refresh_token };
+  const env_client_id = process.env.SPOTIFY_CLIENT_ID?.trim() || "";
+  const env_client_secret = process.env.SPOTIFY_CLIENT_SECRET?.trim() || "";
+  const env_refresh_token = process.env.SPOTIFY_REFRESH_TOKEN?.trim() || "";
+
+  const config = load_spotify_config();
+
+  return {
+    client_id: config.client_id || env_client_id,
+    client_secret: config.client_secret || env_client_secret,
+    refresh_token: config.refresh_token || env_refresh_token,
+  };
 };
 
 export const is_spotify_configured = (): boolean => {

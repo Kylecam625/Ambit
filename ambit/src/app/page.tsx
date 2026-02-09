@@ -19,6 +19,7 @@ import { useVoiceQuality } from "@/hooks/use_voice_quality";
 import { useThinkingSound } from "@/hooks/use_thinking_sound";
 import { use_timers } from "@/hooks/use_timers";
 import { use_wake_word } from "@/hooks/use_wake_word";
+import { use_wake_greeting } from "@/hooks/use_wake_greeting";
 import { use_session_timeout } from "@/hooks/use_session_timeout";
 import { WordHighlightedText } from "@/components/ui/word_highlighted_text";
 import { TimerDisplay } from "@/components/ui/timer_display";
@@ -181,9 +182,10 @@ export default function Home() {
     on_activity: handle_activity,
   });
 
-  /* ---- Wake word + session timeout ---- */
+  /* ---- Wake word + greeting + session timeout ---- */
 
   const end_session = useCallback(() => {
+    is_waking_ref.current = false; // Allow wake word to trigger again
     stop_realtime();
     // Wake word will auto-resume via the `enabled` prop below
   }, [stop_realtime]);
@@ -193,19 +195,59 @@ export default function Home() {
     end_session_ref.current = end_session;
   }, [end_session]);
 
-  // Wake word: enabled when NOT in an active conversation
+  // Pre-generate the "Hey, what's up!" greeting using the selected voice.
+  // Cached and played instantly on wake word detection.
+  const { play_greeting } = use_wake_greeting({
+    voice_id: selected_voice_id,
+    quality_mode: "fast",
+  });
+
+  // Refs so the on_wake callback always has the latest functions
+  const play_greeting_ref = useRef(play_greeting);
+  const start_realtime_ref = useRef(start_realtime);
+  useEffect(() => { play_greeting_ref.current = play_greeting; }, [play_greeting]);
+  useEffect(() => { start_realtime_ref.current = start_realtime; }, [start_realtime]);
+
+  // Guard ref: prevents wake word from re-triggering during the async
+  // start_realtime() window (is_connected hasn't become true yet).
+  const is_waking_ref = useRef(false);
+
+  // Reset the guard when the session connects or ends
+  useEffect(() => {
+    if (is_connected) is_waking_ref.current = false;
+  }, [is_connected]);
+
+  // Wake word: enabled when NOT in an active conversation and not mid-startup
   const wake_word_enabled = !is_connected;
+
+  const handle_wake = useCallback((post_wake_audio: Float32Array) => {
+    // Prevent re-entry during async start_realtime() (is_connected is still false)
+    if (is_waking_ref.current) return;
+    is_waking_ref.current = true;
+
+    // 1. Play cached greeting instantly ("Hey, what's up!")
+    play_greeting_ref.current();
+    // 2. Start realtime connection with pre-buffered audio so the user's
+    //    query ("whats the weather today") is not lost
+    start_realtime_ref.current({
+      pre_buffer: post_wake_audio,
+      pre_buffer_sample_rate: 16_000,
+    });
+  }, []);
+
   const {
     is_listening: is_wake_listening,
   } = use_wake_word({
-    on_wake: start_realtime,
+    on_wake: handle_wake,
     enabled: wake_word_enabled,
   });
 
-  // Session timeout: auto-end after 6s of silence AFTER Ambit finishes speaking
+  // Session timeout: auto-end after silence AFTER Ambit finishes speaking.
+  // Include is_speaking so the timer never counts down while the user is
+  // actively talking — prevents the session from ending mid-reply.
   const { reset_activity } = use_session_timeout({
     is_active: is_connected,
-    is_busy: is_responding || is_generating_tts || is_tts_playing,
+    is_busy: is_responding || is_generating_tts || is_tts_playing || is_speaking,
     on_timeout: end_session,
   });
 
@@ -454,7 +496,7 @@ export default function Home() {
               <button
                 type="button"
                 className="flex cursor-pointer flex-col items-center gap-5 bg-transparent outline-none"
-                onClick={start_realtime}
+                onClick={() => start_realtime()}
                 aria-label="Start listening"
               >
                 <Orb state={state} mood={ui_mood}>

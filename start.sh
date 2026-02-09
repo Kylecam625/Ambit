@@ -17,10 +17,15 @@ ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT_DIR"
 
 IDENTITY_PID=""
+WAKE_WORD_PID=""
 
 cleanup() {
   echo ""
   echo -e "${DIM}Shutting down...${NC}"
+  if [ -n "$WAKE_WORD_PID" ] && kill -0 "$WAKE_WORD_PID" 2>/dev/null; then
+    kill "$WAKE_WORD_PID" 2>/dev/null
+    wait "$WAKE_WORD_PID" 2>/dev/null || true
+  fi
   if [ -n "$IDENTITY_PID" ] && kill -0 "$IDENTITY_PID" 2>/dev/null; then
     kill "$IDENTITY_PID" 2>/dev/null
     wait "$IDENTITY_PID" 2>/dev/null || true
@@ -43,6 +48,21 @@ if [ ! -f "$ROOT_DIR/.env.local" ] && [ ! -f "$ROOT_DIR/.env" ]; then
   exit 1
 fi
 
+# ── Load env vars (so Python/Node children inherit them) ──
+
+ENV_FILE="$ROOT_DIR/.env.local"
+[ ! -f "$ENV_FILE" ] && ENV_FILE="$ROOT_DIR/.env"
+if [ -f "$ENV_FILE" ]; then
+  set -o allexport
+  # Source non-comment, non-empty lines
+  while IFS= read -r line || [ -n "$line" ]; do
+    # Skip blank lines and comments
+    case "$line" in ''|\#*) continue;; esac
+    eval "export $line" 2>/dev/null || true
+  done < "$ENV_FILE"
+  set +o allexport
+fi
+
 # ── Start identity service (background) ──────────────────
 
 echo ""
@@ -62,6 +82,24 @@ if ! kill -0 "$IDENTITY_PID" 2>/dev/null; then
 fi
 
 echo -e "  ${GREEN}✔${NC} Identity service running ${DIM}(http://localhost:5176)${NC}"
+
+# ── Start wake word service (background) ─────────────────
+
+if [ -d "$ROOT_DIR/wake_word_service" ] && command -v python3 &>/dev/null; then
+  echo -e "  ${DIM}Starting wake word service on port 9876...${NC}"
+  (cd "$ROOT_DIR/wake_word_service" && python3 main.py) &
+  WAKE_WORD_PID=$!
+  sleep 2
+
+  if kill -0 "$WAKE_WORD_PID" 2>/dev/null; then
+    echo -e "  ${GREEN}✔${NC} Wake word service running ${DIM}(ws://localhost:9876)${NC}"
+  else
+    echo -e "  ${YELLOW}⚠${NC} Wake word service failed to start ${DIM}(continuing without it)${NC}"
+    WAKE_WORD_PID=""
+  fi
+else
+  echo -e "  ${YELLOW}⚠${NC} Wake word service skipped ${DIM}(python3 not found or directory missing)${NC}"
+fi
 
 # ── Start Ambit (foreground) ─────────────────────────────
 

@@ -33,6 +33,7 @@ data/
 *.db-shm
 *.db-wal
 
-# Spotify device preference (local to each machine)
+# Spotify local config (device preference + OAuth credentials)
 .spotify_preferred_device
+.spotify_config.json
 

@@ -6,21 +6,31 @@ import Link from "next/link";
 import { JournalCalendar } from "@/components/journal/journal_calendar";
 import { JournalEditor } from "@/components/journal/journal_editor";
 import { JournalVoiceQA } from "@/components/journal/journal_voice_qa";
+import { VoicePickerModal } from "@/components/journal/voice_picker_modal";
+import { MovieGenerationProgress } from "@/components/journal/movie_generation_progress";
+import { JournalMoviePlayer } from "@/components/journal/journal_movie_player";
 import { get_identity_service_url } from "@/lib/identity/identity_service_url";
 import {
   identity_list_journal_entries,
   identity_get_journal_entry,
   identity_create_journal_entry,
   identity_update_journal_entry,
+  identity_get_latest_journal_movie,
+  identity_list_journal_movies,
+  identity_list_movie_dates,
+  identity_get_journal_movie,
 } from "@/lib/identity/identity_service_client";
 import type {
   identity_journal_entry,
   identity_journal_entry_summary,
+  journal_movie,
+  journal_movie_summary,
 } from "@/lib/identity/identity_types";
 import type { qa_message } from "@/hooks/use_journal_qa";
 import { MatrixRain } from "@/components/ui/matrix_rain";
 
 type page_state = "idle" | "qa_session" | "editing";
+type movie_state = "idle" | "picking_voice" | "generating" | "playing";
 
 const format_today = (): string => {
   const now = new Date();
@@ -53,6 +63,13 @@ export default function JournalPage() {
   const [is_loading_entries, set_is_loading_entries] = useState(false);
   const [is_loading_entry, set_is_loading_entry] = useState(false);
 
+  // Movie state
+  const [movie_state, set_movie_state] = useState<movie_state>("idle");
+  const [movie_task_id, set_movie_task_id] = useState<string | null>(null);
+  const [current_movie, set_current_movie] = useState<journal_movie | null>(null);
+  const [movie_versions, set_movie_versions] = useState<journal_movie_summary[]>([]);
+  const [movie_dates, set_movie_dates] = useState<Set<string>>(new Set());
+
   const base_url = useMemo(() => get_identity_service_url(), []);
 
   // ── Load calendar entries when month changes ──
@@ -69,9 +86,21 @@ export default function JournalPage() {
     }
   }, [base_url, profile_id, year, month]);
 
+  // ── Load movie dates for calendar indicators ──
+  const load_movie_dates = useCallback(async () => {
+    if (!profile_id) return;
+    try {
+      const dates = await identity_list_movie_dates({ base_url, profile_id, year, month });
+      set_movie_dates(new Set(dates));
+    } catch {
+      // non-critical
+    }
+  }, [base_url, profile_id, year, month]);
+
   useEffect(() => {
     load_entries();
-  }, [load_entries]);
+    load_movie_dates();
+  }, [load_entries, load_movie_dates]);
 
   // ── Load full entry when a date is selected ──
   const load_entry = useCallback(
@@ -101,17 +130,35 @@ export default function JournalPage() {
     [base_url, profile_id]
   );
 
+  // ── Load movie versions for a date ──
+  const load_movie_for_date = useCallback(
+    async (date: string) => {
+      if (!profile_id) return;
+      try {
+        const versions = await identity_list_journal_movies({ base_url, profile_id, entry_date: date });
+        set_movie_versions(versions.filter((v) => v.status === "complete"));
+      } catch {
+        set_movie_versions([]);
+      }
+    },
+    [base_url, profile_id]
+  );
+
   // ── Handle date selection ──
   const handle_select_date = useCallback(
     (date: string) => {
       set_selected_date(date);
       set_page_state("idle");
+      set_movie_state("idle");
       set_current_entry(null);
+      set_current_movie(null);
+      set_movie_versions([]);
       set_editor_html("");
       set_qa_transcript([]);
       load_entry(date);
+      load_movie_for_date(date);
     },
-    [load_entry]
+    [load_entry, load_movie_for_date]
   );
 
   // ── Start Q&A session ──
@@ -175,6 +222,99 @@ export default function JournalPage() {
     },
     [profile_id, selected_date, current_entry, base_url, qa_transcript, load_entries]
   );
+
+  // ── Movie generation flow ──
+  const handle_open_voice_picker = useCallback(() => {
+    set_movie_state("picking_voice");
+  }, []);
+
+  const handle_voice_selected = useCallback(
+    async (selection: { voice_id: string; voice_name: string }) => {
+      if (!profile_id || !selected_date) return;
+
+      set_movie_state("generating");
+
+      try {
+        const response = await fetch("/api/journal/movie/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            profile_id,
+            entry_date: selected_date,
+            voice_id: selection.voice_id,
+            voice_name: selection.voice_name,
+          }),
+        });
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => null);
+          throw new Error((data as { error?: string })?.error || "Failed to start generation");
+        }
+
+        const data = (await response.json()) as { task_id: string };
+        set_movie_task_id(data.task_id);
+      } catch (err) {
+        console.error("[Journal] Movie generation failed to start:", err);
+        set_movie_state("idle");
+      }
+    },
+    [profile_id, selected_date]
+  );
+
+  const handle_movie_generation_complete = useCallback(
+    async (movie_id: string) => {
+      if (!profile_id) return;
+      try {
+        const movie = await identity_get_journal_movie({ base_url, profile_id, movie_id });
+        if (movie) {
+          set_current_movie(movie);
+          set_movie_state("playing");
+          // Refresh movie dates and versions
+          load_movie_dates();
+          if (selected_date) load_movie_for_date(selected_date);
+        }
+      } catch {
+        set_movie_state("idle");
+      }
+    },
+    [base_url, profile_id, selected_date, load_movie_dates, load_movie_for_date]
+  );
+
+  const handle_movie_generation_error = useCallback((error: string) => {
+    console.error("[Journal] Movie generation failed:", error);
+    // Keep showing the progress component which displays the error
+  }, []);
+
+  const handle_play_movie = useCallback(
+    async (movie_id?: string) => {
+      if (!profile_id || !selected_date) return;
+      try {
+        let movie: journal_movie | null = null;
+        if (movie_id) {
+          movie = await identity_get_journal_movie({ base_url, profile_id, movie_id });
+        } else {
+          movie = await identity_get_latest_journal_movie({ base_url, profile_id, entry_date: selected_date });
+        }
+        if (movie) {
+          set_current_movie(movie);
+          set_movie_state("playing");
+        }
+      } catch (err) {
+        console.warn("[Journal] Failed to load movie:", err);
+      }
+    },
+    [base_url, profile_id, selected_date]
+  );
+
+  const handle_close_movie = useCallback(() => {
+    set_movie_state("idle");
+    set_current_movie(null);
+  }, []);
+
+  const handle_regenerate_movie = useCallback(() => {
+    set_movie_state("picking_voice");
+    set_current_movie(null);
+  }, []);
 
   const handle_change_month = useCallback((y: number, m: number) => {
     set_year(y);
@@ -257,6 +397,7 @@ export default function JournalPage() {
               year={year}
               month={month}
               on_change_month={handle_change_month}
+              movie_dates={movie_dates}
             />
           </aside>
 
@@ -311,31 +452,95 @@ export default function JournalPage() {
               />
             )}
 
-            {!is_loading_entry && page_state === "editing" && (
+            {!is_loading_entry && page_state === "editing" && movie_state === "idle" && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <h2 className="text-sm font-semibold text-zinc-300">{selected_date_label}</h2>
-                  {current_entry && (
-                    <button
-                      type="button"
-                      onClick={start_qa}
-                      className="text-xs text-zinc-500 hover:text-amber-300 transition-colors cursor-pointer"
-                    >
-                      Re-do Q&A
-                    </button>
-                  )}
+                  <div className="flex items-center gap-3">
+                    {movie_versions.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => handle_play_movie()}
+                        className="flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 transition-colors cursor-pointer"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M8 5v14l11-7z" />
+                        </svg>
+                        Play Movie
+                        {movie_versions.length > 1 && (
+                          <span className="text-zinc-500">({movie_versions.length} versions)</span>
+                        )}
+                      </button>
+                    )}
+                    {current_entry && (
+                      <button
+                        type="button"
+                        onClick={start_qa}
+                        className="text-xs text-zinc-500 hover:text-amber-300 transition-colors cursor-pointer"
+                      >
+                        Re-do Q&A
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <JournalEditor
                   initial_html={editor_html}
                   on_save={handle_save}
                   is_saving={is_saving}
                   save_status={save_status}
+                  on_generate_movie={handle_open_voice_picker}
+                  has_entry={Boolean(current_entry)}
+                />
+              </div>
+            )}
+
+            {/* Movie generation progress */}
+            {movie_state === "generating" && movie_task_id && (
+              <MovieGenerationProgress
+                task_id={movie_task_id}
+                on_complete={handle_movie_generation_complete}
+                on_error={handle_movie_generation_error}
+                on_cancel={() => { set_movie_state("idle"); set_movie_task_id(null); }}
+              />
+            )}
+
+            {/* Movie player */}
+            {movie_state === "playing" && current_movie && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-semibold text-zinc-300">{selected_date_label}</h2>
+                  {movie_versions.length > 1 && (
+                    <select
+                      value={current_movie.movie_id}
+                      onChange={(e) => handle_play_movie(e.target.value)}
+                      className="h-7 rounded-md bg-white/5 px-2 text-xs text-zinc-400 outline-none border border-white/10 cursor-pointer"
+                    >
+                      {movie_versions.map((v) => (
+                        <option key={v.movie_id} value={v.movie_id} className="bg-zinc-900">
+                          Version {v.version} — {new Date(v.created_at).toLocaleDateString()}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+                <JournalMoviePlayer
+                  movie={current_movie}
+                  on_close={handle_close_movie}
+                  on_regenerate={handle_regenerate_movie}
                 />
               </div>
             )}
           </main>
         </div>
       </div>
+
+      {/* Voice picker modal */}
+      {movie_state === "picking_voice" && (
+        <VoicePickerModal
+          on_select={handle_voice_selected}
+          on_close={() => set_movie_state("idle")}
+        />
+      )}
     </div>
   );
 }

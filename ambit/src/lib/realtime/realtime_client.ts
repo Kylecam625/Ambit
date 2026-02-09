@@ -275,6 +275,64 @@ export class RealtimeTranscriptionClient {
     return this.media_stream;
   }
 
+  /**
+   * Send pre-buffered audio to the OpenAI Realtime API.
+   *
+   * This is used to inject audio captured by the wake-word listener
+   * *before* the realtime connection was established — e.g. the tail of
+   * "hey ambit, whats the weather today" that was recorded while the
+   * connection was still opening.
+   *
+   * @param pcm Float32Array of audio samples at `source_sample_rate`.
+   * @param source_sample_rate The sample rate of the incoming PCM (e.g. 16000).
+   */
+  send_buffered_audio(pcm: Float32Array, source_sample_rate: number): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    if (pcm.length === 0) return;
+
+    // Resample to REALTIME_AUDIO_SAMPLE_RATE (24 kHz) if needed
+    let resampled = pcm;
+    if (source_sample_rate !== REALTIME_AUDIO_SAMPLE_RATE) {
+      const ratio = REALTIME_AUDIO_SAMPLE_RATE / source_sample_rate;
+      const out_length = Math.round(pcm.length * ratio);
+      resampled = new Float32Array(out_length);
+      for (let i = 0; i < out_length; i++) {
+        const src_idx = i / ratio;
+        const idx_floor = Math.floor(src_idx);
+        const idx_ceil = Math.min(idx_floor + 1, pcm.length - 1);
+        const frac = src_idx - idx_floor;
+        resampled[i] = pcm[idx_floor] * (1 - frac) + pcm[idx_ceil] * frac;
+      }
+    }
+
+    // Convert Float32 → Int16
+    const pcm16 = new Int16Array(resampled.length);
+    for (let i = 0; i < resampled.length; i++) {
+      const s = Math.max(-1, Math.min(1, resampled[i]));
+      pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+    }
+
+    // Send in chunks to avoid huge single messages
+    const CHUNK_SIZE = 4800; // 200ms @ 24kHz
+    for (let offset = 0; offset < pcm16.length; offset += CHUNK_SIZE) {
+      const slice = pcm16.subarray(offset, Math.min(offset + CHUNK_SIZE, pcm16.length));
+      const base64_audio = btoa(
+        String.fromCharCode.apply(null, Array.from(new Uint8Array(slice.buffer, slice.byteOffset, slice.byteLength)))
+      );
+
+      this.ws.send(
+        JSON.stringify({
+          type: "input_audio_buffer.append",
+          audio: base64_audio,
+        })
+      );
+    }
+
+    console.log(
+      `[Realtime Client] Sent ${pcm.length} pre-buffered samples (${source_sample_rate}→${REALTIME_AUDIO_SAMPLE_RATE} Hz)`
+    );
+  }
+
   stop_audio_stream(): void {
     if (this.processor) {
       // Clean up message handler for AudioWorkletNode
