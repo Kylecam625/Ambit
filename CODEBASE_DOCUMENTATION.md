@@ -1,7 +1,7 @@
 # Ambit - Complete Codebase Documentation
 
 **Version:** 1.0  
-**Last Updated:** January 19, 2026  
+**Last Updated:** February 8, 2026  
 **Application:** Real-time voice AI assistant with facial recognition and personalized memory
 
 ---
@@ -125,9 +125,12 @@ ambit/
 │   │   │   │   ├── respond/route.ts  # Main AI response endpoint
 │   │   │   │   ├── token/route.ts    # Generate Realtime token
 │   │   │   │   └── tts/route.ts      # Text-to-speech endpoint
-│   │   │   └── stt/
-│   │   │       ├── route.ts          # Basic transcription
-│   │   │       └── stream/route.ts   # Streaming transcription
+│   │   │   ├── stt/
+│   │   │   │   ├── route.ts          # Basic transcription
+│   │   │   │   └── stream/route.ts   # Streaming transcription
+│   │   │   └── govee/
+│   │   │       ├── devices/route.ts  # List Govee devices
+│   │   │       └── control/route.ts  # Control Govee devices
 │   │   ├── favicon.ico
 │   │   ├── globals.css               # Global styles
 │   │   ├── layout.tsx                # Root layout
@@ -145,11 +148,14 @@ ambit/
 │   │   │   └── stt_visualizer.tsx    # Audio visualizer
 │   │   └── ui/
 │   │       ├── bar_visualizer.tsx    # Audio bar visualizer
+│   │       ├── orb.tsx              # Central animated orb
+│   │       ├── timer_display.tsx    # Retro LED timer display
 │   │       └── voice_picker.tsx      # Voice selection UI
 │   │
 │   ├── hooks/                        # React hooks
 │   │   ├── use_realtime_stt.ts       # Main voice conversation hook
-│   │   └── use_stt.ts                # Basic STT hook (not actively used)
+│   │   ├── use_stt.ts                # Basic STT hook (not actively used)
+│   │   └── use_timers.ts             # Timer state management & chime audio
 │   │
 │   └── lib/                          # Business logic & utilities
 │       ├── audio/
@@ -172,7 +178,11 @@ ambit/
 │       │   ├── memory_extractor.ts          # AI memory extraction
 │       │   └── README.md                    # Identity system docs
 │       │
+│       ├── govee/
+│       │   └── govee_client.ts              # Govee API client (lights)
+│       │
 │       ├── openai/
+│       │   ├── ambit_tools.ts               # AI tool definitions & selection
 │       │   ├── openai_client.ts             # OpenAI client setup
 │       │   ├── openai_constants.ts          # System prompts & config
 │       │   ├── openai_conversations.ts      # Conversation ID creation
@@ -1752,6 +1762,31 @@ npm run lint       # Run ESLint
 ---
 
 ## Recent Changes
+
+**February 8, 2026 - Timer Tool & Govee Light Control:**
+
+Added two new AI tools and supporting infrastructure:
+
+**Timer tool (`set_timer`):**
+- Defined in `ambit_tools.ts` with keyword-based auto-selection
+- Server handler in `respond/route.ts` emits `timer_started` UI events
+- Client-side `use_timers` hook manages multiple concurrent timers with 1-second tick
+- Retro LED display (`timer_display.tsx`) rendered inside the Orb component
+- Web Audio API chime loops for 20 seconds on completion; dismiss stops audio
+- Supports multiple simultaneous timers with a cycle button
+
+**Govee light control (`control_lights`):**
+- API routes under `api/govee/` for device listing and control
+- `govee_client.ts` wraps the Govee v2 REST API
+- Supports color, brightness, on/off, and color temperature commands
+- Optional — requires `GOVEE_API_KEY` environment variable
+
+**Tool system architecture (`ambit_tools.ts`):**
+- Central registry of all AI function tools with types, definitions, and keyword matchers
+- `select_ambit_tools(text)` dynamically enables tools based on user input keywords
+- Hardcoded allowlist in `openai_responses.ts` updated to include new tool names
+
+---
 
 **January 19, 2026 - Conversation Context Fix:**
 

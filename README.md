@@ -4,7 +4,7 @@ A real-time voice AI companion with face recognition, personalized memory, and a
 
 Talk to it. It sees you, remembers you, and gets smarter over time.
 
-**120 files | 17,400+ lines of code**
+**160 files | 19,500+ lines of code**
 
 ---
 
@@ -43,13 +43,15 @@ Uses your webcam (browser-based, nothing leaves your machine) to recognize faces
 Ambit remembers things about you — preferences, facts, notes, tags. Memory is extracted automatically every 10 messages and stored per-profile with strict isolation between users.
 
 ### Tools
-Ambit has six built-in capabilities (it never calls them "tools" — it just does them):
+Ambit has eight built-in capabilities (it never calls them "tools" — it just does them):
 
 - **Camera analysis** -- "What do you see?" or "How do I look?" triggers a vision snapshot from your webcam
 - **Screen analysis** -- "Look at my screen" or "What's this error?" captures and analyzes your screen content
 - **Image generation** -- Ask it to create images; they pop up as an overlay when ready and save to your profile gallery
 - **Image editing** -- "Make it darker" or "Add a sunset" modifies the last generated image
+- **Timers** -- "Set a timer for 5 minutes" creates a retro LED countdown displayed inside the orb, with a chime when done. Supports multiple simultaneous timers
 - **Spotify control** -- Play, pause, skip, search, and control volume (optional, requires Spotify credentials)
+- **Light control** -- Control Govee smart lights — color, brightness, on/off, color temperature (optional, requires Govee API key)
 - **Mood control** -- The entire UI atmosphere (orb color, matrix rain, glow) shifts to match the emotional tone of the conversation
 
 ### Mood-Reactive UI
@@ -98,6 +100,7 @@ Edit `.env.local` and fill in your API keys:
 | `SPOTIFY_CLIENT_ID` | No | Spotify app client ID (enables music control) |
 | `SPOTIFY_CLIENT_SECRET` | No | Spotify app client secret |
 | `SPOTIFY_REFRESH_TOKEN` | No | Spotify OAuth refresh token |
+| `GOVEE_API_KEY` | No | Govee developer API key (enables smart light control) |
 
 ### 2. Start the identity service
 
@@ -181,6 +184,7 @@ To improve accuracy: capture enrollments from straight-on, left turn, and right 
 | Image generation fails | Verify your OpenAI project has image generation enabled |
 | Face recognition drops on head turns | Add more face enrollments from different angles via Edit Profile |
 | Spotify not working | Check that `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, and `SPOTIFY_REFRESH_TOKEN` are set in `.env.local` |
+| Light control not working | Verify `GOVEE_API_KEY` is set in `.env.local` and your Govee device supports the v2 API |
 
 ---
 
