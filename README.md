@@ -33,6 +33,9 @@ That's it. Ambit opens at **http://localhost:3000**.
 
 ## What It Does
 
+### Wake Word
+Say **"Hey Ambit"** to start a conversation hands-free — no need to tap anything. Uses mic energy detection with a short Whisper transcription to recognize the wake phrase. The session auto-ends after 6 seconds of silence (counted from when Ambit finishes speaking) or when you say goodbye. Wake word listening resumes automatically after each session.
+
 ### Voice Conversation
 Real-time voice loop powered by OpenAI. Ambit listens, thinks, and speaks back using ElevenLabs text-to-speech with emotional audio tags. Responses are displayed with karaoke-style word-by-word highlighting synced to the audio.
 
@@ -72,6 +75,7 @@ The interface responds to the conversation's emotional tone:
 - Voice picker (browse and preview ElevenLabs voices)
 - Voice quality toggle (quality mode with `eleven_v3` or fast mode with `eleven_flash_v2_5`)
 - Thinking sounds toggle (ambient audio while Ambit is processing)
+- Wake word is always on — just say "Hey Ambit" when the orb is idle
 
 ---
 
@@ -131,7 +135,7 @@ ambit/                  # Next.js app (UI + API routes)
   src/
     app/                # Pages and API routes
     components/         # React components (identity, mouth, ui)
-    hooks/              # React hooks (realtime STT, conversation state, etc.)
+    hooks/              # React hooks (realtime STT, wake word, session timeout, etc.)
     lib/                # Business logic (openai, identity, elevenlabs, spotify, stt)
   public/               # Static assets (audio worklet, icons, thinking sounds)
 identity_service/       # Node/Express + SQLite backend (profiles, memory, images)
@@ -185,6 +189,7 @@ To improve accuracy: capture enrollments from straight-on, left turn, and right 
 | Face recognition drops on head turns | Add more face enrollments from different angles via Edit Profile |
 | Spotify not working | Check that `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, and `SPOTIFY_REFRESH_TOKEN` are set in `.env.local` |
 | Light control not working | Verify `GOVEE_API_KEY` is set in `.env.local` and your Govee device supports the v2 API |
+| Wake word not responding | Make sure microphone permission is granted. Check the browser console for `[WakeWord]` logs. The wake word uses Whisper via your OpenAI key — verify `OPENAI_API_KEY` is set |
 
 ---
 

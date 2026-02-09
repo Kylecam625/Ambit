@@ -18,6 +18,8 @@ import { MatrixRain } from "@/components/ui/matrix_rain";
 import { useVoiceQuality } from "@/hooks/use_voice_quality";
 import { useThinkingSound } from "@/hooks/use_thinking_sound";
 import { use_timers } from "@/hooks/use_timers";
+import { use_wake_word } from "@/hooks/use_wake_word";
+import { use_session_timeout } from "@/hooks/use_session_timeout";
 import { WordHighlightedText } from "@/components/ui/word_highlighted_text";
 import { TimerDisplay } from "@/components/ui/timer_display";
 
@@ -119,6 +121,18 @@ export default function Home() {
     }
   }, []);
 
+  // Refs to break circular dependency between useRealtimeStt and session hooks
+  const end_session_ref = useRef<(() => void) | null>(null);
+  const activity_ref = useRef<(() => void) | null>(null);
+
+  const handle_farewell = useCallback(() => {
+    end_session_ref.current?.();
+  }, []);
+
+  const handle_activity = useCallback(() => {
+    activity_ref.current?.();
+  }, []);
+
   const {
     is_connected,
     is_loading_mics,
@@ -163,7 +177,42 @@ export default function Home() {
     },
     capture_screen_frame,
     detected_emotion: detected_emotion_ref.current,
+    on_farewell: handle_farewell,
+    on_activity: handle_activity,
   });
+
+  /* ---- Wake word + session timeout ---- */
+
+  const end_session = useCallback(() => {
+    stop_realtime();
+    // Wake word will auto-resume via the `enabled` prop below
+  }, [stop_realtime]);
+
+  // Keep ref in sync so the farewell callback can reach end_session
+  useEffect(() => {
+    end_session_ref.current = end_session;
+  }, [end_session]);
+
+  // Wake word: enabled when NOT in an active conversation
+  const wake_word_enabled = !is_connected;
+  const {
+    is_listening: is_wake_listening,
+  } = use_wake_word({
+    on_wake: start_realtime,
+    enabled: wake_word_enabled,
+  });
+
+  // Session timeout: auto-end after 6s of silence AFTER Ambit finishes speaking
+  const { reset_activity } = use_session_timeout({
+    is_active: is_connected,
+    is_busy: is_responding || is_generating_tts || is_tts_playing,
+    on_timeout: end_session,
+  });
+
+  // Wire activity_ref so useRealtimeStt's on_activity resets the timeout
+  useEffect(() => {
+    activity_ref.current = reset_activity;
+  }, [reset_activity]);
 
   // Cancel in-flight on profile switch
   const last_profile_id_ref = useRef<string | null>(active_profile_id);
@@ -419,7 +468,9 @@ export default function Home() {
                   )}
                 </Orb>
                 <span className="text-base font-bold tracking-wide text-amber-200/90 transition-colors hover:text-amber-100 animate-fade-in-up delay-300">
-                  Tap to start
+                  {is_wake_listening
+                    ? "Say \u2018Hey Ambit\u2019 or tap to start"
+                    : "Tap to start"}
                 </span>
               </button>
             ) : (

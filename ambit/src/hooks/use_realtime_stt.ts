@@ -70,6 +70,26 @@ const CAMERA_CAPTURE_ATTEMPTS = 20;
 const CAMERA_CAPTURE_DELAY_MS = 150;
 
 /* ------------------------------------------------------------------ */
+/*  Farewell detection                                                 */
+/* ------------------------------------------------------------------ */
+
+const FAREWELL_PATTERNS: RegExp[] = [
+  /\b(good\s*bye|bye)\b/i,
+  /\bsee\s+you\b/i,
+  /\bi[''']?m\s+(leaving|done|out)\b/i,
+  /\bthat[''']?s\s+all\b/i,
+  /\bgood\s*night\b/i,
+  /\btalk\s+to\s+you\s+later\b/i,
+  /\bcatch\s+you\s+later\b/i,
+  /\bpeace\s+out\b/i,
+  /\blater\s+ambit\b/i,
+  /\bbye\s+ambit\b/i,
+];
+
+const is_farewell = (text: string): boolean =>
+  FAREWELL_PATTERNS.some((p) => p.test(text));
+
+/* ------------------------------------------------------------------ */
 /*  Main hook                                                          */
 /* ------------------------------------------------------------------ */
 
@@ -79,13 +99,23 @@ export const useRealtimeStt = ({
   capture_screen_frame = null,
   quality_mode = "quality",
   detected_emotion = null,
+  on_farewell = null,
+  on_activity = null,
 }: {
   profile_id?: string | null;
   capture_camera_frame?: (() => Promise<string | null>) | null;
   capture_screen_frame?: (() => Promise<string | null>) | null;
   quality_mode?: "quality" | "fast";
   detected_emotion?: string | null;
+  /** Called when a farewell phrase is detected in the transcript. */
+  on_farewell?: (() => void) | null;
+  /** Called on any speech/response activity (for session timeout). */
+  on_activity?: (() => void) | null;
 } = {}) => {
+  const on_farewell_ref = useRef(on_farewell);
+  const on_activity_ref = useRef(on_activity);
+  useEffect(() => { on_farewell_ref.current = on_farewell; }, [on_farewell]);
+  useEffect(() => { on_activity_ref.current = on_activity; }, [on_activity]);
   /* ---- Composed sub-hooks ---- */
   const mic_voice = useMicAndVoice();
   const conversation = useConversationState({ profile_id });
@@ -262,6 +292,7 @@ export const useRealtimeStt = ({
         audio.onplay = () => {
           set_is_generating_tts(false);
           set_is_tts_playing(true);
+          on_activity_ref.current?.();
           // Duck Spotify volume while speaking (fire-and-forget)
           fetch("/api/spotify/volume", {
             method: "POST",
@@ -284,6 +315,7 @@ export const useRealtimeStt = ({
           set_is_tts_playing(false);
           set_word_alignment(null);
           set_tts_text("");
+          on_activity_ref.current?.();
           if (audio_url_ref.current === url) {
             URL.revokeObjectURL(url);
             audio_url_ref.current = null;
@@ -737,12 +769,14 @@ export const useRealtimeStt = ({
           set_transcript("");
           cancel_tts();
           cancel_response();
+          on_activity_ref.current?.();
           break;
 
         case "speech_stopped":
           is_speaking_ref.current = false;
           set_is_speaking(false);
           image_polling.flush_pending_ui_events();
+          on_activity_ref.current?.();
           break;
 
         case "transcript_delta": {
@@ -754,6 +788,7 @@ export const useRealtimeStt = ({
                 delta: delta_text,
               }).slice(-MAX_CONVERSATION_MESSAGE_CHARS)
             );
+            on_activity_ref.current?.();
           }
           break;
         }
@@ -777,6 +812,21 @@ export const useRealtimeStt = ({
             };
 
             set_transcript(trimmed_text);
+            on_activity_ref.current?.();
+
+            // Check for farewell phrases before requesting a response
+            if (is_farewell(trimmed_text)) {
+              console.log("[STT] Farewell detected:", trimmed_text);
+              // Still request the response so Ambit can say goodbye back
+              void request_response({ text: trimmed_text });
+              // Fire farewell callback after a short delay to let the
+              // goodbye response play before the session ends
+              setTimeout(() => {
+                on_farewell_ref.current?.();
+              }, 4_000);
+              break;
+            }
+
             void request_response({ text: trimmed_text });
           }
           break;
